@@ -23,8 +23,8 @@ type Argv = mri.Argv & {
   x?: string;
   file?: string;
   f?: string;
-  context?: number;
-  c?: number;
+  lines?: number;
+  l?: number;
   preview?: boolean;
   help?: boolean;
   h?: boolean;
@@ -68,17 +68,17 @@ EXAMPLES
   pack -s "array[index]" -s "foo,bar" -s "hello world" -e "js"
   
   # Include only 10 lines of context around each match
-  pack -s "TODO" -c 10 -o todos-context.md
+  pack -s "TODO" -l 10 -o todos-context.md
   
   # Include 50 lines of context for focused debugging
-  pack -s "error" -s "exception" -c 50 --style markdown
+  pack -s "error" -s "exception" -l 50 --style markdown
 
 OPTIONS (wrapper)
   -s, --strings           Search string (can be used multiple times) [required]
   -e, --extensions        Extensions to include (optional, defaults to common code files)
   -x, --exclude-extensions  Extensions to exclude (multiple flags or comma-separated)
   -f, --file              Read configuration from a file
-  -c, --context           Number of context lines around matches (default: all)
+  -l, --lines             Number of context lines around matches (default: all)
       --preview           Only list matched files (no packing)
   -h, --help             Show this help
   -v, --version          Show version
@@ -281,10 +281,12 @@ function buildRepomixPassthroughArgs(parsed: Argv): string[] {
     "extensions",
     "exclude-extensions",
     "file",
+    "lines",
     "s",
     "e",
     "x",
     "f",
+    "l",
     "preview",
     "help",
     "h",
@@ -442,12 +444,12 @@ async function main() {
       e: "extensions",
       x: "exclude-extensions",
       f: "file",
-      c: "context",
+      l: "lines",
       h: "help",
       v: "version"
     },
     string: ["strings", "s", "extensions", "e", "exclude-extensions", "x", "file", "f"],
-    number: ["context", "c"],
+    number: ["lines", "l"],
     boolean: ["preview", "help", "h", "version", "v"]
   }) as Argv;
 
@@ -618,8 +620,7 @@ async function main() {
   }
 
   // 3) Run Repomix using custom implementation since stdin and include are broken
-  // Note: passthrough args are ignored in this custom implementation
-  // const passthrough = buildRepomixPassthroughArgs(parsed);
+  const passthrough = buildRepomixPassthroughArgs(parsed);
   
   // Convert matched files to relative paths
   const cwd = process.cwd();
@@ -628,7 +629,7 @@ async function main() {
   console.log(`🧩 Packing ${matched.length} file(s)...`);
   
   // Get context lines if specified
-  const contextLines = parsed.context || parsed.c;
+  const contextLines = parsed.lines || parsed.l;
   
   if (contextLines) {
     console.log(`📝 Extracting ${contextLines} lines of context around matches...`);
@@ -765,6 +766,50 @@ ${content}
   await fs.writeFile(outputFile, output, 'utf8');
   
   console.log(`\n✅ Successfully packed ${matched.length} file(s) to ${outputFile}`);
+  
+  // Handle passthrough args like --copy
+  if (parsed.copy || parsed.c) {
+    try {
+      // Copy to clipboard using the native clipboard API via a child process
+      const { spawn } = await import('child_process');
+      
+      // Determine the platform and use appropriate command
+      const platform = process.platform;
+      let copyProc;
+      
+      if (platform === 'darwin') {
+        // macOS
+        copyProc = spawn('pbcopy');
+      } else if (platform === 'win32') {
+        // Windows
+        copyProc = spawn('clip');
+      } else {
+        // Linux - try xclip
+        copyProc = spawn('xclip', ['-selection', 'clipboard']);
+      }
+      
+      copyProc.stdin.write(output);
+      copyProc.stdin.end();
+      
+      await new Promise((resolve, reject) => {
+        copyProc.on('exit', (code) => {
+          if (code === 0) {
+            console.log('📋 Copied to clipboard!');
+            resolve(code);
+          } else {
+            console.log('⚠️  Could not copy to clipboard');
+            reject(new Error(`Copy process exited with code ${code}`));
+          }
+        });
+        copyProc.on('error', (err) => {
+          console.log('⚠️  Could not copy to clipboard (clipboard tool not found)');
+          reject(err);
+        });
+      });
+    } catch (err) {
+      // Silently fail if clipboard is not available
+    }
+  }
   
   // Calculate some stats
   const totalChars = output.length;

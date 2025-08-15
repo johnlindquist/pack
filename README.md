@@ -141,13 +141,13 @@ Extract only the surrounding context instead of entire files:
 
 ```bash
 # Show 10 lines around each TODO comment
-packx -s "TODO" -c 10 -o todos.md
+packx -s "TODO" -l 10 -o todos.md
 
 # Get focused context for debugging
-packx -s "error" -s "exception" -c 50 --style markdown
+packx -s "error" -s "exception" -l 50 --style markdown
 
 # Minimal context for quick review
-packx -s "FIXME" -c 3
+packx -s "FIXME" -l 3
 ```
 
 ### Preview Mode
@@ -345,7 +345,7 @@ __tests__
 | `--extensions` | `-e` | Extensions to include (optional, defaults to common code files) |
 | `--exclude-extensions` | `-x` | Extensions to exclude (multiple or comma-separated) |
 | `--file` | `-f` | Read configuration from file |
-| `--context` | `-c` | Number of lines around each match (default: entire file) |
+| `--lines` | `-l` | Number of lines around each match (default: entire file) |
 | `--preview` | | Preview matched files without packing |
 | `--help` | `-h` | Show help |
 | `--version` | `-v` | Show version |
@@ -405,7 +405,7 @@ Extract just the error handling code for AI analysis:
 
 ```bash
 packx -s "catch" -s "error" -s "exception" \
-      -c 20 \
+      -l 20 \
       -o error-handling.md \
       --style markdown
 ```
