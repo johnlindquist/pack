@@ -19,8 +19,9 @@ packx -s "useState" -e "tsx" -o react-hooks.md
 ## Features
 
 - 🔍 **Content-based filtering** - Only include files containing specific strings
-- 📁 **Extension filtering** - Include/exclude files by extension
-- 🔧 **Flexible input** - Use CLI flags or config files
+- 📁 **Smart defaults** - Searches common code files automatically (no extension flag needed!)
+- 🎨 **Flexible extensions** - Optionally filter by specific file types
+- 🔧 **Config files** - Save and reuse search patterns
 - ⚡ **Fast** - Works with Node.js, Bun, or compiled binaries
 - 🎯 **Precise** - Search for multiple strings with special character support
 - 📦 **Repomix integration** - All Repomix flags pass through seamlessly
@@ -121,7 +122,13 @@ packx -f my-search.txt -o results.md
 
 ### Basic Usage
 
-Search for multiple strings in TypeScript files:
+Search for strings across all common code files (default):
+
+```bash
+packx -s "TODO" -s "FIXME"
+```
+
+Search in specific file types:
 
 ```bash
 packx -s "useState" -s "useEffect" -e "ts,tsx"
@@ -318,13 +325,25 @@ __tests__
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--strings` | `-s` | Search string (use multiple times) |
-| `--extensions` | `-e` | Extensions to include (multiple or comma-separated) |
+| `--strings` | `-s` | Search string (use multiple times) **[required]** |
+| `--extensions` | `-e` | Extensions to include (optional, defaults to common code files) |
 | `--exclude-extensions` | `-x` | Extensions to exclude (multiple or comma-separated) |
 | `--file` | `-f` | Read configuration from file |
 | `--preview` | | Preview matched files without packing |
 | `--help` | `-h` | Show help |
 | `--version` | `-v` | Show version |
+
+### Default Extensions
+
+When no `-e` flag is specified, packx searches these file types:
+
+- **Languages**: js, jsx, ts, tsx, mjs, cjs, py, rb, go, java, cpp, c, h, rs, swift, kt, scala, php
+- **Web Frameworks**: vue, svelte, astro
+- **Styles**: css, scss, less
+- **Config**: json, yaml, yml, toml, xml
+- **Documentation**: md, mdx, txt
+- **Scripts**: sh, bash, zsh, fish
+- **Data**: sql, graphql, gql
 
 ### Repomix Pass-through Options
 

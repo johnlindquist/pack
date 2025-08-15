@@ -36,22 +36,25 @@ Filter your repo by extension + substring match, then pipe the matches to Repomi
 
 USAGE
   packx init [filename]              Create a config file template
-  packx -s "string1" -s "string2" -e "ts,tsx" [repomix options...]
+  packx -s "string1" -s "string2" [options] [repomix options...]
   packx -f config.txt [repomix options...]
 
 COMMANDS
   init [filename]    Create a config file template (default: pack-config.txt)
 
 EXAMPLES
-  # Search for multiple strings
-  pack -s "setFlags" -s "flaggedValue" -s "currentFlag" -e "ts,tsx"
+  # Search all common code files (default extensions)
+  packx -s "TODO" -s "FIXME"
+  
+  # Search specific file types
+  packx -s "useState" -e "ts,tsx"
   
   # Multiple extension flags or comma-separated
-  pack -s "useState" -e "ts" -e "tsx" -e "jsx"
-  pack -s "useState" -e "ts,tsx,jsx"
+  packx -s "import" -e "ts" -e "tsx" -e "jsx"
+  packx -s "import" -e "ts,tsx,jsx"
   
   # Exclude .d.ts files while searching .ts files
-  pack -s "useState" -e "ts,tsx" -x "d.ts"
+  packx -s "useState" -e "ts,tsx" -x "d.ts"
   
   # Using a config file
   pack -f my-search.txt --compress -o output.xml
@@ -63,13 +66,22 @@ EXAMPLES
   pack -s "array[index]" -s "foo,bar" -s "hello world" -e "js"
 
 OPTIONS (wrapper)
-  -s, --strings           Search string (can be used multiple times)
-  -e, --extensions        Extensions to include (multiple flags or comma-separated)
+  -s, --strings           Search string (can be used multiple times) [required]
+  -e, --extensions        Extensions to include (optional, defaults to common code files)
   -x, --exclude-extensions  Extensions to exclude (multiple flags or comma-separated)
   -f, --file              Read configuration from a file
       --preview           Only list matched files (no packing)
   -h, --help             Show this help
   -v, --version          Show version
+
+DEFAULT EXTENSIONS (when -e is not specified)
+  JavaScript/TypeScript: js, jsx, ts, tsx, mjs, cjs
+  Python, Ruby, Go, Java, C/C++, Rust, Swift, Kotlin, Scala, PHP
+  Web: vue, svelte, astro, css, scss, less
+  Config: json, yaml, yml, toml, xml
+  Docs: md, mdx, txt
+  Scripts: sh, bash, zsh, fish
+  Data: sql, graphql, gql
 
 CONFIG FILE FORMAT
   Create a text file with sections marked by headers:
@@ -266,11 +278,12 @@ async function createConfigTemplate(filename: string = 'pack-config.txt') {
 
 [extensions]
 # File extensions to include (without dots)
+# Leave empty to search all common code files
 # Examples:
-ts
-tsx
-js
-jsx
+# ts
+# tsx
+# js
+# jsx
 
 [exclude]
 # Patterns to exclude (matched from end of filename)
@@ -328,7 +341,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v1.0.1");
+    console.log("packx v1.0.2");
     process.exit(0);
   }
 
@@ -387,9 +400,25 @@ async function main() {
 
   strings = strings.filter(Boolean);
 
-  if (!strings.length || !extensions.size) {
-    console.error("❌ Both --strings (-s) and --extensions (-e) are required.");
-    console.error("   Example: pack -s 'foo' -s 'bar' -e 'ts,tsx'");
+  // If no extensions specified, use common defaults
+  if (!extensions.size) {
+    extensions = toExtSet([
+      'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs',
+      'py', 'rb', 'go', 'java', 'cpp', 'c', 'h',
+      'rs', 'swift', 'kt', 'scala', 'php',
+      'vue', 'svelte', 'astro',
+      'css', 'scss', 'less',
+      'json', 'yaml', 'yml', 'toml', 'xml',
+      'md', 'mdx', 'txt',
+      'sh', 'bash', 'zsh', 'fish',
+      'sql', 'graphql', 'gql'
+    ]);
+  }
+
+  if (!strings.length) {
+    console.error("❌ At least one search string is required.");
+    console.error("   Example: packx -s 'foo' -s 'bar'");
+    console.error("   Or use a config file: packx init my-search.txt");
     process.exit(1);
   }
 
