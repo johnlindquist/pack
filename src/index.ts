@@ -588,11 +588,13 @@ async function parseConfigFile(filePath: string): Promise<{
   search: string[];
   extensions: string[];
   exclude: string[];
+  excludePatterns: string[];
 }> {
   const config = {
     search: [] as string[],
     extensions: [] as string[],
-    exclude: [] as string[]
+    exclude: [] as string[],
+    excludePatterns: [] as string[]
   };
 
   try {
@@ -622,7 +624,18 @@ async function parseConfigFile(filePath: string): Promise<{
       
       // Add line to current section
       if (currentSection) {
-        config[currentSection].push(trimmed);
+        if (currentSection === 'exclude') {
+          // Determine if it's a pattern or extension
+          if (trimmed.includes('/') || trimmed.includes('*')) {
+            // It's a glob pattern or directory
+            config.excludePatterns.push(trimmed);
+          } else {
+            // It's likely a file extension
+            config.exclude.push(trimmed);
+          }
+        } else {
+          config[currentSection].push(trimmed);
+        }
       }
     }
     
@@ -659,12 +672,19 @@ async function createConfigTemplate(filename: string = 'pack-config.txt') {
 # jsx
 
 [exclude]
-# Patterns to exclude (matched from end of filename)
+# Exclude patterns - supports:
+#   - File extensions (matched from end): d.ts, test.ts
+#   - Directories: docs/, site/
+#   - Glob patterns: **/*.test.ts, docs/**
 # Examples:
 # d.ts
 # test.ts
 # spec.ts
 # .min.js
+# docs/
+# site/
+# **/*.test.ts
+# examples/**
 `;
 
   try {
@@ -718,7 +738,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v2.0.1");
+    console.log("packx v2.0.2");
     process.exit(0);
   }
 
@@ -726,6 +746,7 @@ async function main() {
   let excludeStrings: string[] = [];
   let extensions: Set<string>;
   let excludeExtensions: Set<string>;
+  let excludePatterns: string[] = [];
   const caseSensitive = parsed["case-sensitive"] || parsed.C || false;
 
   // Check if config file is provided
@@ -735,6 +756,7 @@ async function main() {
     strings = config.search;
     extensions = toExtSet(config.extensions);
     excludeExtensions = toExtSet(config.exclude);
+    excludePatterns = config.excludePatterns;
     
     // Allow command-line args to add to config file values
     strings.push(...normalizeStrings(parsed.strings));
@@ -848,7 +870,8 @@ async function main() {
           '**/temp/**',
           '**/*.log',
           '**/.DS_Store',
-          '**/Thumbs.db'
+          '**/Thumbs.db',
+          ...excludePatterns  // Add user-defined exclude patterns
         ],
         absolute: true,
         dot: false
