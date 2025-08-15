@@ -328,7 +328,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v1.0.0");
+    console.log("packx v1.0.1");
     process.exit(0);
   }
 
