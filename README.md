@@ -106,12 +106,25 @@ source ~/.zshrc
 
 ## Usage
 
+### Quick Start
+
+```bash
+# Create a search config
+packx init my-search.txt
+
+# Edit it with your patterns
+nano my-search.txt
+
+# Run the search
+packx -f my-search.txt -o results.md
+```
+
 ### Basic Usage
 
 Search for multiple strings in TypeScript files:
 
 ```bash
-pack -s "useState" -s "useEffect" -e "ts,tsx"
+packx -s "useState" -s "useEffect" -e "ts,tsx"
 ```
 
 ### Preview Mode
@@ -183,11 +196,13 @@ Save your search patterns in reusable config files.
 ### Quick Start with Config Files
 
 ```bash
-# Create a config file template
+# Create a config file template (creates pack-config.txt)
 packx init
 
 # Or specify a custom filename
 packx init my-search.txt
+packx init focused-flag.txt
+packx init api-endpoints.config
 
 # Edit the created file
 nano pack-config.txt
