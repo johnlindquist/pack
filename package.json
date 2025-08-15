@@ -1,16 +1,40 @@
 {
-  "name": "pack",
-  "version": "0.1.0",
-  "description": "Filter files by strings and extensions, then pack them with Repomix.",
+  "name": "packx",
+  "version": "1.0.0",
+  "description": "Smart file filter for Repomix - search and bundle only files containing specific strings",
   "license": "MIT",
   "type": "module",
+  "author": "John Lindquist",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnlindquist/pack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/johnlindquist/pack/issues"
+  },
+  "homepage": "https://github.com/johnlindquist/pack#readme",
+  "keywords": [
+    "repomix",
+    "filter",
+    "search",
+    "bundle",
+    "pack",
+    "ai",
+    "llm",
+    "code"
+  ],
   "bin": {
-    "pack": "dist/index.js",
-    "repomix-pack": "dist/index.js"
+    "packx": "dist/index.js",
+    "pack": "dist/index.js"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir dist --target bun --minify",
+    "build": "bun build ./src/index.ts --outdir dist --target node --format esm",
     "dev": "bun run ./src/index.ts --help",
+    "prepublishOnly": "npm run build && npm run update-version-in-code",
+    "update-version-in-code": "node scripts/update-version.js",
+    "release:patch": "npm version patch && npm publish && git push && git push --tags",
+    "release:minor": "npm version minor && npm publish && git push && git push --tags",
+    "release:major": "npm version major && npm publish && git push && git push --tags",
     "compile": "bun build ./src/index.ts --compile --outfile bin/pack",
     "compile:all": "npm run compile:macos && npm run compile:linux && npm run compile:windows",
     "compile:macos": "bun build ./src/index.ts --compile --target bun-darwin-x64 --outfile bin/pack-macos-x64",

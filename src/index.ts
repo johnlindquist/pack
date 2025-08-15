@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
  * repomix-filter-pack
  *
@@ -35,8 +35,12 @@ function printHelp() {
 Filter your repo by extension + substring match, then pipe the matches to Repomix (--stdin).
 
 USAGE
-  pack -s "string1" -s "string2" -e "ts,tsx" [repomix options...]
-  pack -f config.txt [repomix options...]
+  packx init [filename]              Create a config file template
+  packx -s "string1" -s "string2" -e "ts,tsx" [repomix options...]
+  packx -f config.txt [repomix options...]
+
+COMMANDS
+  init [filename]    Create a config file template (default: pack-config.txt)
 
 EXAMPLES
   # Search for multiple strings
@@ -247,7 +251,64 @@ async function parseConfigFile(filePath: string): Promise<{
   }
 }
 
+async function createConfigTemplate(filename: string = 'pack-config.txt') {
+  const template = `# Pack configuration file
+# Search for specific strings in your codebase
+# Lines starting with # are comments
+# Empty lines are ignored
+
+[search]
+# Add search strings here, one per line
+# Examples:
+# console.log
+# TODO
+# FIXME
+
+[extensions]
+# File extensions to include (without dots)
+# Examples:
+ts
+tsx
+js
+jsx
+
+[exclude]
+# Patterns to exclude (matched from end of filename)
+# Examples:
+# d.ts
+# test.ts
+# spec.ts
+# .min.js
+`;
+
+  try {
+    // Check if file already exists
+    try {
+      await fs.access(filename);
+      console.error(`❌ File '${filename}' already exists. Use a different name or delete the existing file.`);
+      process.exit(1);
+    } catch {
+      // File doesn't exist, proceed
+    }
+
+    await fs.writeFile(filename, template, 'utf8');
+    console.log(`✅ Created config template: ${filename}`);
+    console.log(`\nEdit the file and then run:`);
+    console.log(`  packx -f ${filename}`);
+  } catch (error) {
+    console.error(`❌ Failed to create config file: ${error}`);
+    process.exit(1);
+  }
+}
+
 async function main() {
+  // Check for init command first
+  if (process.argv[2] === 'init') {
+    const filename = process.argv[3] || 'pack-config.txt';
+    await createConfigTemplate(filename);
+    process.exit(0);
+  }
+
   // Parse with aliases properly configured
   const parsed = mri(process.argv.slice(2), {
     alias: {
@@ -267,7 +328,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("repomix-filter-pack v0.1.0");
+    console.log("packx v1.0.0");
     process.exit(0);
   }
 
@@ -414,31 +475,27 @@ async function main() {
 
   // 3) Run Repomix with --stdin and forward any extra flags
   const passthrough = buildRepomixPassthroughArgs(parsed);
-  const repomixCmd = await (async () => {
-    // Prefer a local `repomix` binary if available on PATH, otherwise use `bunx -y repomix`
-    const found = Bun.which("repomix");
-    if (found) return ["repomix", ...passthrough, "--stdin"];
-    return ["bunx", "-y", "repomix", ...passthrough, "--stdin"];
-  })();
+  
+  // Use npx to run repomix (works with both npm and bun)
+  const { spawn } = await import('child_process');
+  const repomixCmd = ["npx", "-y", "repomix", ...passthrough, "--stdin"];
 
   console.log(`🧩 Running: ${repomixCmd.join(" ")}`);
   console.log(`   feeding ${matched.length} file(s) via --stdin ...`);
 
-  const proc = Bun.spawn({
-    cmd: repomixCmd,
-    stdin: "pipe",
-    stdout: "inherit",
-    stderr: "inherit",
+  const proc = spawn(repomixCmd[0], repomixCmd.slice(1), {
+    stdio: ['pipe', 'inherit', 'inherit'],
     cwd: process.cwd()
   });
 
   // Write newline-separated absolute paths to stdin
   const payload = matched.join("\n") + "\n";
-  await proc.stdin!.write(payload);
+  proc.stdin!.write(payload);
   proc.stdin!.end();
 
-  const code = await proc.exited;
-  process.exit(code);
+  proc.on('exit', (code) => {
+    process.exit(code || 0);
+  });
 }
 
 main().catch((err) => {

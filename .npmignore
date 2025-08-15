@@ -1,0 +1,39 @@
+# Source files (we ship dist/)
+src/
+*.ts
+!*.d.ts
+
+# Config files
+tsconfig.json
+.gitignore
+
+# Binary files (too large for npm)
+bin/
+
+# Example files
+*.txt
+!README.md
+
+# Development files
+node_modules/
+bun.lock
+bun.lockb
+.git/
+.github/
+
+# Build files
+*.log
+.DS_Store
+
+# Test files
+test/
+*.test.*
+*.spec.*
+
+# Editor
+.vscode/
+.idea/
+
+# Temporary
+tmp/
+temp/

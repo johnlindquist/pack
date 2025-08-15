@@ -1,24 +1,56 @@
 # Pack - Smart File Filter for Repomix
 
+[![npm version](https://badge.fury.io/js/packx.svg)](https://www.npmjs.com/package/packx)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 Pack is a powerful CLI wrapper for [Repomix](https://github.com/yamadashy/repomix) that filters repository files by content and extension before bundling. Instead of packing your entire codebase, Pack lets you search for specific strings and only bundle the files that match.
+
+```bash
+# Quick install
+npm install -g packx
+
+# Create a config template
+packx init
+
+# Search and bundle
+packx -s "useState" -e "tsx" -o react-hooks.md
+```
 
 ## Features
 
 - 🔍 **Content-based filtering** - Only include files containing specific strings
 - 📁 **Extension filtering** - Include/exclude files by extension
 - 🔧 **Flexible input** - Use CLI flags or config files
-- ⚡ **Fast** - Compiled to native binary with Bun
+- ⚡ **Fast** - Works with Node.js, Bun, or compiled binaries
 - 🎯 **Precise** - Search for multiple strings with special character support
 - 📦 **Repomix integration** - All Repomix flags pass through seamlessly
 
 ## Installation
 
-### Prerequisites
+### Option 1: Install from npm (Recommended)
 
-- [Bun](https://bun.sh) (for building from source)
-- [Repomix](https://github.com/yamadashy/repomix) (installed automatically as dependency)
+Works on Mac, Windows, and Linux with Node.js 18+:
 
-### Quick Setup
+```bash
+# Install globally
+npm install -g packx
+
+# Or with yarn
+yarn global add packx
+
+# Or with pnpm
+pnpm add -g packx
+
+# Now use it anywhere
+packx --help
+pack --help  # Also available as 'pack'
+```
+
+### Option 2: Build from Source
+
+Prerequisites:
+- [Bun](https://bun.sh) (for building)
+- [Repomix](https://github.com/yamadashy/repomix) (installed automatically)
 
 ```bash
 # Clone the repository
@@ -35,9 +67,9 @@ bun run compile
 ./bin/pack --help
 ```
 
-### Add to PATH
+### Local Installation Options (for source builds)
 
-#### Option 1: Add the bin directory to PATH (Recommended)
+#### Option 1: Add the bin directory to PATH
 
 ```bash
 # Add to ~/.zshrc or ~/.bashrc
@@ -146,11 +178,27 @@ pack -s "import" -e "ts,tsx" -e "jsx,js"
 
 ## Config Files
 
-Save your search patterns in reusable config files:
+Save your search patterns in reusable config files.
+
+### Quick Start with Config Files
+
+```bash
+# Create a config file template
+packx init
+
+# Or specify a custom filename
+packx init my-search.txt
+
+# Edit the created file
+nano pack-config.txt
+
+# Use the config file
+packx -f pack-config.txt
+```
 
 ### Config File Format
 
-Create a text file (e.g., `my-search.txt`):
+The config file uses a simple INI-like format:
 
 ```ini
 # Comments start with #

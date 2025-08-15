@@ -40,7 +40,8 @@ temp/
 
 # Output files from pack (examples)
 *.xml
-*.md
-!README.md
 output.*
 repomix-output.*
+# Keep documentation
+!README.md
+!PUBLISHING.md
