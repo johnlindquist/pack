@@ -22,9 +22,10 @@ packx -s "useState" -e "tsx" -o react-hooks.md
 - 📁 **Smart defaults** - Searches common code files automatically (no extension flag needed!)
 - 🎨 **Flexible extensions** - Optionally filter by specific file types
 - 🔧 **Config files** - Save and reuse search patterns
-- ⚡ **Fast** - Works with Node.js, Bun, or compiled binaries
+- ✂️ **Context lines** - Limit output to N lines around each match for focused results
+- ⚡ **Fast** - Direct file processing without external dependencies
 - 🎯 **Precise** - Search for multiple strings with special character support
-- 📦 **Repomix integration** - All Repomix flags pass through seamlessly
+- 📊 **Smart merging** - Overlapping context windows are automatically merged
 
 ## Installation
 
@@ -132,6 +133,21 @@ Search in specific file types:
 
 ```bash
 packx -s "useState" -s "useEffect" -e "ts,tsx"
+```
+
+### Context Lines
+
+Extract only the surrounding context instead of entire files:
+
+```bash
+# Show 10 lines around each TODO comment
+packx -s "TODO" -c 10 -o todos.md
+
+# Get focused context for debugging
+packx -s "error" -s "exception" -c 50 --style markdown
+
+# Minimal context for quick review
+packx -s "FIXME" -c 3
 ```
 
 ### Preview Mode
@@ -329,6 +345,7 @@ __tests__
 | `--extensions` | `-e` | Extensions to include (optional, defaults to common code files) |
 | `--exclude-extensions` | `-x` | Extensions to exclude (multiple or comma-separated) |
 | `--file` | `-f` | Read configuration from file |
+| `--context` | `-c` | Number of lines around each match (default: entire file) |
 | `--preview` | | Preview matched files without packing |
 | `--help` | `-h` | Show help |
 | `--version` | `-v` | Show version |
@@ -382,18 +399,29 @@ bun run compile:all
 
 ## Use Cases
 
-### 1. Code Review Preparation
+### 1. Focused Debugging Context
+
+Extract just the error handling code for AI analysis:
+
+```bash
+packx -s "catch" -s "error" -s "exception" \
+      -c 20 \
+      -o error-handling.md \
+      --style markdown
+```
+
+### 2. Code Review Preparation
 
 Bundle only files containing specific feature flags:
 
 ```bash
-pack -s "FEATURE_FLAG_NEW_UI" -s "experimentalFeature" \
-     -e "ts,tsx" \
-     -o feature-review.md \
-     --style markdown
+packx -s "FEATURE_FLAG_NEW_UI" -s "experimentalFeature" \
+      -e "ts,tsx" \
+      -o feature-review.md \
+      --style markdown
 ```
 
-### 2. Security Audit
+### 3. Security Audit
 
 Find all files with potential security concerns:
 
@@ -404,7 +432,7 @@ pack -s "apiKey" -s "secret" -s "password" -s "token" \
      -o security-audit.xml
 ```
 
-### 3. Migration Planning
+### 4. Migration Planning
 
 Identify files using deprecated APIs:
 
@@ -414,7 +442,7 @@ pack -s "componentWillMount" -s "componentWillReceiveProps" \
      -o deprecated-apis.md
 ```
 
-### 4. Documentation Generation
+### 5. Documentation Generation
 
 Extract all files with TODO comments:
 

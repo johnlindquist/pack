@@ -23,6 +23,8 @@ type Argv = mri.Argv & {
   x?: string;
   file?: string;
   f?: string;
+  context?: number;
+  c?: number;
   preview?: boolean;
   help?: boolean;
   h?: boolean;
@@ -64,12 +66,19 @@ EXAMPLES
   
   # Search for strings with special characters
   pack -s "array[index]" -s "foo,bar" -s "hello world" -e "js"
+  
+  # Include only 10 lines of context around each match
+  pack -s "TODO" -c 10 -o todos-context.md
+  
+  # Include 50 lines of context for focused debugging
+  pack -s "error" -s "exception" -c 50 --style markdown
 
 OPTIONS (wrapper)
   -s, --strings           Search string (can be used multiple times) [required]
   -e, --extensions        Extensions to include (optional, defaults to common code files)
   -x, --exclude-extensions  Extensions to exclude (multiple flags or comma-separated)
   -f, --file              Read configuration from a file
+  -c, --context           Number of context lines around matches (default: all)
       --preview           Only list matched files (no packing)
   -h, --help             Show this help
   -v, --version          Show version
@@ -145,6 +154,110 @@ function toExtSet(exts: string[]): Set<string> {
 function escRegex(lit: string): string {
   // Escape regex-special chars for safe substring search
   return lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Context extraction types and functions
+type MatchPosition = {
+  line: number;
+  column: number;
+  match: string;
+};
+
+type ContextWindow = {
+  startLine: number;
+  endLine: number;
+  lines: string[];
+  matches: MatchPosition[];
+};
+
+function findAllMatches(content: string, pattern: RegExp): MatchPosition[] {
+  const lines = content.split('\n');
+  const matches: MatchPosition[] = [];
+  
+  lines.forEach((line, lineIndex) => {
+    let match;
+    const linePattern = new RegExp(pattern.source, pattern.flags.replace('g', '') + 'g');
+    while ((match = linePattern.exec(line)) !== null) {
+      matches.push({
+        line: lineIndex + 1, // 1-based line numbers
+        column: match.index,
+        match: match[0]
+      });
+    }
+  });
+  
+  return matches;
+}
+
+function extractContextWindows(
+  content: string, 
+  pattern: RegExp, 
+  contextLines: number
+): ContextWindow[] {
+  const lines = content.split('\n');
+  const matches = findAllMatches(content, pattern);
+  
+  if (matches.length === 0) return [];
+  
+  // Create initial windows
+  const windows: ContextWindow[] = [];
+  
+  for (const match of matches) {
+    const startLine = Math.max(1, match.line - contextLines);
+    const endLine = Math.min(lines.length, match.line + contextLines);
+    
+    windows.push({
+      startLine,
+      endLine,
+      lines: lines.slice(startLine - 1, endLine),
+      matches: [match]
+    });
+  }
+  
+  // Merge overlapping windows
+  const merged: ContextWindow[] = [];
+  let current: ContextWindow | null = null;
+  
+  for (const window of windows) {
+    if (!current) {
+      current = window;
+    } else if (window.startLine <= current.endLine + 1) {
+      // Merge windows
+      current.endLine = Math.max(current.endLine, window.endLine);
+      current.lines = lines.slice(current.startLine - 1, current.endLine);
+      current.matches.push(...window.matches);
+    } else {
+      // Start new window
+      merged.push(current);
+      current = window;
+    }
+  }
+  
+  if (current) {
+    merged.push(current);
+  }
+  
+  return merged;
+}
+
+function formatContextWindows(windows: ContextWindow[], filePath: string): string {
+  if (windows.length === 0) return '';
+  
+  let output = '';
+  for (const window of windows) {
+    // Add separator between windows
+    if (output) {
+      output += '\n  ...\n';
+    }
+    
+    // Add lines with line numbers
+    window.lines.forEach((line, index) => {
+      const lineNum = window.startLine + index;
+      output += `${String(lineNum).padStart(6, ' ')}│ ${line}\n`;
+    });
+  }
+  
+  return output;
 }
 
 async function fileContainsAnyStrings(absPath: string, pattern: RegExp): Promise<boolean> {
@@ -329,10 +442,12 @@ async function main() {
       e: "extensions",
       x: "exclude-extensions",
       f: "file",
+      c: "context",
       h: "help",
       v: "version"
     },
     string: ["strings", "s", "extensions", "e", "exclude-extensions", "x", "file", "f"],
+    number: ["context", "c"],
     boolean: ["preview", "help", "h", "version", "v"]
   }) as Argv;
 
@@ -341,7 +456,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v1.3.0");
+    console.log("packx v1.4.0");
     process.exit(0);
   }
 
@@ -423,7 +538,7 @@ async function main() {
   }
 
   const roots = parsed._.length ? parsed._ : ["."];
-  const pattern = new RegExp(strings.map(escRegex).join("|"));
+  const pattern = new RegExp(strings.map(escRegex).join("|"), "i");
 
   // 1) Discover files (respecting .gitignore) under each root
   const candidates = new Set<string>();
@@ -511,8 +626,16 @@ async function main() {
   const relativePaths = matched.map(p => path.relative(cwd, p));
   
   console.log(`🧩 Packing ${matched.length} file(s)...`);
-  console.log(`📝 Files to pack:`);
-  relativePaths.forEach(p => console.log(`  • ${p}`));
+  
+  // Get context lines if specified
+  const contextLines = parsed.context || parsed.c;
+  
+  if (contextLines) {
+    console.log(`📝 Extracting ${contextLines} lines of context around matches...`);
+  } else {
+    console.log(`📝 Files to pack:`);
+    relativePaths.forEach(p => console.log(`  • ${p}`));
+  }
 
   // Since Repomix's stdin and include features are broken, 
   // we'll directly create the output ourselves
@@ -521,6 +644,8 @@ async function main() {
   
   // Read and combine the files
   let output = '';
+  let totalMatchCount = 0;
+  let totalWindowCount = 0;
   
   if (outputStyle === "xml") {
     output = `This file is a merged representation of the filtered codebase, combined into a single document by packx.
@@ -541,7 +666,7 @@ or other automated processes.
 
 <notes>
 - Files were filtered by packx based on content and extension matching
-- Total files included: ${matched.length}
+- Total files included: ${matched.length}${contextLines ? `\n- Context lines: ${contextLines} lines around each match` : ''}
 </notes>
 </file_summary>
 
@@ -558,11 +683,30 @@ This section contains the contents of the repository's files.
       const relPath = relativePaths[index];
       try {
         const content = await fs.readFile(filePath, 'utf8');
-        output += `<file path="${relPath}">
+        
+        if (contextLines) {
+          // Extract context windows
+          const windows = extractContextWindows(content, pattern, contextLines);
+          if (windows.length > 0) {
+            totalWindowCount += windows.length;
+            totalMatchCount += windows.reduce((sum, w) => sum + w.matches.length, 0);
+            
+            const formatted = formatContextWindows(windows, relPath);
+            if (formatted) {
+              output += `<file path="${relPath}" matches="${windows.reduce((sum, w) => sum + w.matches.length, 0)}" windows="${windows.length}">
+${formatted}</file>
+
+`;
+            }
+          }
+        } else {
+          // Include entire file
+          output += `<file path="${relPath}">
 ${content}
 </file>
 
 `;
+        }
       } catch (err) {
         console.error(`Warning: Could not read file ${relPath}: ${err}`);
       }
@@ -573,7 +717,7 @@ ${content}
     // Markdown format
     output = `# Packx Output
 
-This file contains ${matched.length} filtered files from the repository.
+This file contains ${matched.length} filtered files from the repository.${contextLines ? `\n\n**Context:** ${contextLines} lines around each match` : ''}
 
 ## Files
 
@@ -584,13 +728,33 @@ This file contains ${matched.length} filtered files from the repository.
       try {
         const content = await fs.readFile(filePath, 'utf8');
         const ext = path.extname(relPath).slice(1) || 'txt';
-        output += `### ${relPath}
+        
+        if (contextLines) {
+          // Extract context windows
+          const windows = extractContextWindows(content, pattern, contextLines);
+          if (windows.length > 0) {
+            totalWindowCount += windows.length;
+            totalMatchCount += windows.reduce((sum, w) => sum + w.matches.length, 0);
+            
+            output += `### ${relPath}
+
+**Matches:** ${windows.reduce((sum, w) => sum + w.matches.length, 0)} | **Context windows:** ${windows.length}
+
+\`\`\`${ext}
+${formatContextWindows(windows, relPath)}\`\`\`
+
+`;
+          }
+        } else {
+          // Include entire file
+          output += `### ${relPath}
 
 \`\`\`${ext}
 ${content}
 \`\`\`
 
 `;
+        }
       } catch (err) {
         console.error(`Warning: Could not read file ${relPath}: ${err}`);
       }
@@ -609,6 +773,11 @@ ${content}
   console.log(`\n📊 Pack Summary:`);
   console.log(`────────────────`);
   console.log(`  Total Files: ${matched.length} files`);
+  if (contextLines) {
+    console.log(`  Context Lines: ${contextLines} around each match`);
+    console.log(`  Total Matches: ${totalMatchCount} matches`);
+    console.log(`  Context Windows: ${totalWindowCount} windows`);
+  }
   console.log(`  Total Tokens: ~${totalTokens.toLocaleString()} tokens`);
   console.log(`  Total Chars: ${totalChars.toLocaleString()} chars`);
   console.log(`       Output: ${outputFile}`);
