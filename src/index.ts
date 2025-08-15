@@ -925,6 +925,7 @@ async function main() {
   let output = '';
   let totalMatchCount = 0;
   let totalWindowCount = 0;
+  const fileSizes: { path: string; size: number; tokens: number }[] = [];
   
   if (outputStyle === "xml") {
     output = `This file is a merged representation of the filtered codebase, combined into a single document by packx.
@@ -963,6 +964,7 @@ This section contains the contents of the repository's files.
       try {
         const content = await fs.readFile(filePath, 'utf8');
         
+        let fileOutput = '';
         if (contextLines) {
           // Extract context windows
           const windows = extractContextWindows(content, pattern, contextLines);
@@ -972,7 +974,7 @@ This section contains the contents of the repository's files.
             
             const formatted = formatContextWindows(windows, relPath);
             if (formatted) {
-              output += `<file path="${relPath}" matches="${windows.reduce((sum, w) => sum + w.matches.length, 0)}" windows="${windows.length}">
+              fileOutput = `<file path="${relPath}" matches="${windows.reduce((sum, w) => sum + w.matches.length, 0)}" windows="${windows.length}">
 ${formatted}</file>
 
 `;
@@ -980,11 +982,19 @@ ${formatted}</file>
           }
         } else {
           // Include entire file
-          output += `<file path="${relPath}">
+          fileOutput = `<file path="${relPath}">
 ${content}
 </file>
 
 `;
+        }
+        
+        if (fileOutput) {
+          output += fileOutput;
+          // Track file size for summary
+          const fileSize = fileOutput.length;
+          const fileTokens = Math.round(fileSize / 4);
+          fileSizes.push({ path: relPath, size: fileSize, tokens: fileTokens });
         }
       } catch (err) {
         console.error(`Warning: Could not read file ${relPath}: ${err}`);
@@ -1008,6 +1018,7 @@ This file contains ${matched.length} filtered files from the repository.${contex
         const content = await fs.readFile(filePath, 'utf8');
         const ext = path.extname(relPath).slice(1) || 'txt';
         
+        let fileOutput = '';
         if (contextLines) {
           // Extract context windows
           const windows = extractContextWindows(content, pattern, contextLines);
@@ -1015,7 +1026,7 @@ This file contains ${matched.length} filtered files from the repository.${contex
             totalWindowCount += windows.length;
             totalMatchCount += windows.reduce((sum, w) => sum + w.matches.length, 0);
             
-            output += `### ${relPath}
+            fileOutput = `### ${relPath}
 
 **Matches:** ${windows.reduce((sum, w) => sum + w.matches.length, 0)} | **Context windows:** ${windows.length}
 
@@ -1026,13 +1037,21 @@ ${formatContextWindows(windows, relPath)}\`\`\`
           }
         } else {
           // Include entire file
-          output += `### ${relPath}
+          fileOutput = `### ${relPath}
 
 \`\`\`${ext}
 ${content}
 \`\`\`
 
 `;
+        }
+        
+        if (fileOutput) {
+          output += fileOutput;
+          // Track file size for summary
+          const fileSize = fileOutput.length;
+          const fileTokens = Math.round(fileSize / 4);
+          fileSizes.push({ path: relPath, size: fileSize, tokens: fileTokens });
         }
       } catch (err) {
         console.error(`Warning: Could not read file ${relPath}: ${err}`);
@@ -1104,6 +1123,22 @@ ${content}
   console.log(`  Total Tokens: ~${totalTokens.toLocaleString()} tokens`);
   console.log(`  Total Chars: ${totalChars.toLocaleString()} chars`);
   console.log(`       Output: ${outputFile}`);
+  
+  // Show top files by size
+  if (fileSizes.length > 0) {
+    const topFiles = fileSizes
+      .sort((a, b) => b.tokens - a.tokens)
+      .slice(0, 5);
+    
+    console.log(`\n📂 Top Files (by tokens):`);
+    console.log(`──────────────────────────`);
+    for (const file of topFiles) {
+      const fileName = path.basename(file.path);
+      const dirName = path.dirname(file.path);
+      const shortPath = dirName === '.' ? fileName : `${dirName}/${fileName}`;
+      console.log(`  ${file.tokens.toLocaleString().padStart(8)} tokens - ${shortPath}`);
+    }
+  }
 }
 
 main().catch((err) => {
