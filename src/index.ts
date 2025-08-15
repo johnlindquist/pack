@@ -341,7 +341,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v1.2.0");
+    console.log("packx v1.3.0");
     process.exit(0);
   }
 
@@ -502,29 +502,116 @@ async function main() {
     process.exit(0);
   }
 
-  // 3) Run Repomix with --stdin and forward any extra flags
-  const passthrough = buildRepomixPassthroughArgs(parsed);
+  // 3) Run Repomix using custom implementation since stdin and include are broken
+  // Note: passthrough args are ignored in this custom implementation
+  // const passthrough = buildRepomixPassthroughArgs(parsed);
   
-  // Use npx to run repomix (works with both npm and bun)
-  const { spawn } = await import('child_process');
-  const repomixCmd = ["npx", "-y", "repomix", ...passthrough, "--stdin"];
+  // Convert matched files to relative paths
+  const cwd = process.cwd();
+  const relativePaths = matched.map(p => path.relative(cwd, p));
+  
+  console.log(`🧩 Packing ${matched.length} file(s)...`);
+  console.log(`📝 Files to pack:`);
+  relativePaths.forEach(p => console.log(`  • ${p}`));
 
-  console.log(`🧩 Running: ${repomixCmd.join(" ")}`);
-  console.log(`   feeding ${matched.length} file(s) via --stdin ...`);
+  // Since Repomix's stdin and include features are broken, 
+  // we'll directly create the output ourselves
+  const outputFile = parsed.output || parsed.o || "repomix-output.xml";
+  const outputStyle = parsed.style || "xml";
+  
+  // Read and combine the files
+  let output = '';
+  
+  if (outputStyle === "xml") {
+    output = `This file is a merged representation of the filtered codebase, combined into a single document by packx.
 
-  const proc = spawn(repomixCmd[0], repomixCmd.slice(1), {
-    stdio: ['pipe', 'inherit', 'inherit'],
-    cwd: process.cwd()
-  });
+<file_summary>
+This section contains a summary of this file.
 
-  // Write newline-separated absolute paths to stdin
-  const payload = matched.join("\n") + "\n";
-  proc.stdin!.write(payload);
-  proc.stdin!.end();
+<purpose>
+This file contains a packed representation of filtered repository contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
 
-  proc.on('exit', (code) => {
-    process.exit(code || 0);
-  });
+<usage_guidelines>
+- Treat this file as a snapshot of the repository's state
+- Be aware that this file may contain sensitive information
+</usage_guidelines>
+
+<notes>
+- Files were filtered by packx based on content and extension matching
+- Total files included: ${matched.length}
+</notes>
+</file_summary>
+
+<directory_structure>
+${relativePaths.join('\n')}
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+`;
+    
+    for (const [index, filePath] of matched.entries()) {
+      const relPath = relativePaths[index];
+      try {
+        const content = await fs.readFile(filePath, 'utf8');
+        output += `<file path="${relPath}">
+${content}
+</file>
+
+`;
+      } catch (err) {
+        console.error(`Warning: Could not read file ${relPath}: ${err}`);
+      }
+    }
+    
+    output += `</files>`;
+  } else {
+    // Markdown format
+    output = `# Packx Output
+
+This file contains ${matched.length} filtered files from the repository.
+
+## Files
+
+`;
+    
+    for (const [index, filePath] of matched.entries()) {
+      const relPath = relativePaths[index];
+      try {
+        const content = await fs.readFile(filePath, 'utf8');
+        const ext = path.extname(relPath).slice(1) || 'txt';
+        output += `### ${relPath}
+
+\`\`\`${ext}
+${content}
+\`\`\`
+
+`;
+      } catch (err) {
+        console.error(`Warning: Could not read file ${relPath}: ${err}`);
+      }
+    }
+  }
+  
+  // Write the output file
+  await fs.writeFile(outputFile, output, 'utf8');
+  
+  console.log(`\n✅ Successfully packed ${matched.length} file(s) to ${outputFile}`);
+  
+  // Calculate some stats
+  const totalChars = output.length;
+  const totalTokens = Math.round(totalChars / 4); // Rough estimate
+  
+  console.log(`\n📊 Pack Summary:`);
+  console.log(`────────────────`);
+  console.log(`  Total Files: ${matched.length} files`);
+  console.log(`  Total Tokens: ~${totalTokens.toLocaleString()} tokens`);
+  console.log(`  Total Chars: ${totalChars.toLocaleString()} chars`);
+  console.log(`       Output: ${outputFile}`);
 }
 
 main().catch((err) => {

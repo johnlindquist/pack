@@ -1,9 +1,9 @@
-# Pack - Smart File Filter for Repomix
+# Packx - Smart File Filter and Bundler
 
 [![npm version](https://badge.fury.io/js/packx.svg)](https://www.npmjs.com/package/packx)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Pack is a powerful CLI wrapper for [Repomix](https://github.com/yamadashy/repomix) that filters repository files by content and extension before bundling. Instead of packing your entire codebase, Pack lets you search for specific strings and only bundle the files that match.
+Packx is a powerful CLI tool that filters repository files by content and extension before bundling them for AI consumption. Search for specific strings in your codebase and bundle only the files that match - perfect for providing focused context to LLMs.
 
 ```bash
 # Quick install
