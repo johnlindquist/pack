@@ -718,7 +718,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v2.0.0");
+    console.log("packx v2.0.1");
     process.exit(0);
   }
 
@@ -879,9 +879,18 @@ async function main() {
 
   // 2) Content filter
   const matched: string[] = [];
+  const foundExtensions = new Set<string>();
+  
   for (const p of candidates) {
     if (await fileContainsAnyStrings(p, pattern, excludePattern)) {
-      matched.push(path.resolve(p));
+      const resolvedPath = path.resolve(p);
+      matched.push(resolvedPath);
+      
+      // Track the extension
+      const ext = path.extname(resolvedPath).toLowerCase();
+      if (ext) {
+        foundExtensions.add(ext);
+      }
     }
   }
 
@@ -1124,13 +1133,21 @@ ${content}
   console.log(`  Total Chars: ${totalChars.toLocaleString()} chars`);
   console.log(`       Output: ${outputFile}`);
   
+  // Show found extensions
+  if (foundExtensions.size > 0) {
+    const sortedExtensions = Array.from(foundExtensions).sort();
+    console.log(`\n📁 Extensions Found:`);
+    console.log(`────────────────────`);
+    console.log(`  ${sortedExtensions.join(', ')}`);
+  }
+  
   // Show top files by size
   if (fileSizes.length > 0) {
     const topFiles = fileSizes
       .sort((a, b) => b.tokens - a.tokens)
-      .slice(0, 5);
+      .slice(0, 10);
     
-    console.log(`\n📂 Top Files (by tokens):`);
+    console.log(`\n📂 Top 10 Files (by tokens):`);
     console.log(`──────────────────────────`);
     for (const file of topFiles) {
       const fileName = path.basename(file.path);
