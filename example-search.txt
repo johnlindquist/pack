@@ -1,0 +1,24 @@
+# Example search configuration for pack
+# This searches for console logging statements
+
+[search]
+console.log
+console.error
+console.warn
+console.debug
+console.info
+
+[extensions]
+ts
+tsx
+js
+jsx
+
+[exclude]
+# Exclude type definition files
+d.ts
+# Exclude test files
+test.ts
+spec.ts
+test.js
+spec.js

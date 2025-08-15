@@ -1,0 +1,29 @@
+# Search for React hooks usage
+
+[search]
+useState
+useEffect
+useCallback
+useMemo
+useRef
+useContext
+useReducer
+useLayoutEffect
+
+[extensions]
+tsx
+jsx
+ts
+js
+
+[exclude]
+# Skip declaration files
+d.ts
+# Skip test files  
+test.tsx
+spec.tsx
+test.jsx
+spec.jsx
+__tests__
+# Skip build output
+.min.js

@@ -1,0 +1,43 @@
+# Find API calls and network requests
+
+[search]
+fetch(
+axios
+$.ajax
+XMLHttpRequest
+api/
+/api/
+graphql
+REST
+endpoint
+apiKey
+API_KEY
+bearer
+Authorization:
+
+[extensions]
+ts
+tsx
+js
+jsx
+vue
+svelte
+
+[exclude]
+# Skip tests and mocks
+test.
+spec.
+mock.
+__mocks__
+__tests__
+.test.
+.spec.
+# Skip configs and docs
+config.
+.config.
+README
+.md
+# Skip build artifacts
+.min.
+dist/
+build/
