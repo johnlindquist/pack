@@ -34,101 +34,334 @@ type Argv = mri.Argv & {
 
 function printHelp() {
   const txt = `
-Filter your repo by extension + substring match, then pipe the matches to Repomix (--stdin).
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                           PACKX - Smart File Filter                          ║
+║         Bundle only the files you need for focused AI analysis              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+OVERVIEW
+  Packx filters your repository files by content AND extension, then bundles 
+  only matching files for AI consumption. Perfect for providing focused context
+  to LLMs without overwhelming them with irrelevant code.
 
 USAGE
-  packx init [filename]              Create a config file template
-  packx -s "string1" -s "string2" [options] [repomix options...]
-  packx -f config.txt [repomix options...]
+  packx init [filename]                      Create a config file template
+  packx -s "string" [options] [repomix...]   Search and bundle files
+  packx -f config.txt [options] [repomix...] Use a config file
 
-COMMANDS
-  init [filename]    Create a config file template (default: pack-config.txt)
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                              QUICK START                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
 
-EXAMPLES
-  # Search all common code files (default extensions)
-  packx -s "TODO" -s "FIXME"
-  
-  # Search specific file types
-  packx -s "useState" -e "ts,tsx"
-  
-  # Multiple extension flags or comma-separated
-  packx -s "import" -e "ts" -e "tsx" -e "jsx"
-  packx -s "import" -e "ts,tsx,jsx"
-  
-  # Exclude .d.ts files while searching .ts files
-  packx -s "useState" -e "ts,tsx" -x "d.ts"
-  
-  # Using a config file
-  pack -f my-search.txt --compress -o output.xml
-  
-  # With repomix passthrough flags
-  pack -s "foo" -s "bar" -e "ts,tsx" --compress -o output.xml --style xml
-  
-  # Search for strings with special characters
-  pack -s "array[index]" -s "foo,bar" -s "hello world" -e "js"
-  
-  # Include only 10 lines of context around each match
-  pack -s "TODO" -l 10 -o todos-context.md
-  
-  # Include 50 lines of context for focused debugging
-  pack -s "error" -s "exception" -l 50 --style markdown
+  1. Install packx:
+     npm install -g packx
 
-OPTIONS (wrapper)
-  -s, --strings           Search string (can be used multiple times) [required]
-  -e, --extensions        Extensions to include (optional, defaults to common code files)
-  -x, --exclude-extensions  Extensions to exclude (multiple flags or comma-separated)
-  -f, --file              Read configuration from a file
-  -l, --lines             Number of context lines around matches (default: all)
-      --preview           Only list matched files (no packing)
-  -h, --help             Show this help
-  -v, --version          Show version
+  2. Create a search config:
+     packx init my-search.txt
 
-DEFAULT EXTENSIONS (when -e is not specified)
-  JavaScript/TypeScript: js, jsx, ts, tsx, mjs, cjs
-  Python, Ruby, Go, Java, C/C++, Rust, Swift, Kotlin, Scala, PHP
-  Web: vue, svelte, astro, css, scss, less
-  Config: json, yaml, yml, toml, xml
-  Docs: md, mdx, txt
-  Scripts: sh, bash, zsh, fish
-  Data: sql, graphql, gql
+  3. Edit the config with your patterns:
+     nano my-search.txt
 
-CONFIG FILE FORMAT
-  Create a text file with sections marked by headers:
+  4. Run the search:
+     packx -f my-search.txt -o results.md
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                           COMMON USE CASES                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+🔍 FIND ALL TODOS AND FIXMES
+  packx -s "TODO" -s "FIXME" -s "HACK" -s "XXX"
   
-  # Example: my-search.txt
+  This searches ALL common code files by default - no need to specify extensions!
+
+📦 BUNDLE REACT HOOKS FOR REVIEW
+  packx -s "useState" -s "useEffect" -s "useCallback" -e "tsx,jsx" -o hooks.md
   
+  Focus on just React/JSX files containing hooks.
+
+🐛 DEBUG WITH CONTEXT LINES
+  packx -s "error" -s "exception" -l 20 --style markdown
+  
+  Extract only 20 lines around each error/exception - perfect for debugging!
+
+🔒 SECURITY AUDIT
+  packx -s "apiKey" -s "secret" -s "password" -s "token" \\
+        -e "js,ts,env,json" -x "test.js,spec.js" -o security.xml
+  
+  Find sensitive strings, excluding test files.
+
+📋 COPY TO CLIPBOARD
+  packx -s "console.log" --copy
+  packx -s "debugger" -c      # -c is shorthand for --copy
+  
+  Instantly copy results to clipboard for pasting into ChatGPT, Claude, etc.
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                          DETAILED EXAMPLES                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. BASIC STRING SEARCH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Single string search across all default extensions
+  packx -s "localStorage"
+  
+  # Multiple strings (files must contain at least ONE)
+  packx -s "fetch" -s "axios" -s "XMLHttpRequest"
+  
+  # Strings with special characters (no escaping needed!)
+  packx -s "array[index]" -s "obj.prop" -s "foo(bar, baz)"
+  packx -s "// TODO:" -s "/* FIXME" -s "@deprecated"
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. EXTENSION FILTERING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Specific extensions (multiple formats supported)
+  packx -s "import" -e "ts,tsx"              # Comma-separated
+  packx -s "import" -e "ts" -e "tsx"         # Multiple flags
+  packx -s "import" -e ts -e tsx -e jsx      # No quotes needed
+  
+  # Exclude patterns (matched from end of filename)
+  packx -s "interface" -e "ts" -x "d.ts"     # Exclude .d.ts files
+  packx -s "test" -x "spec.ts" -x "test.ts"  # Exclude test files
+  packx -s "build" -x ".min.js" -x ".min.css" # Exclude minified
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. CONTEXT LINES (NEW!)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Extract only N lines around each match (not entire files!)
+  packx -s "TODO" -l 5                    # 5 lines before & after
+  packx -s "error" -l 20 -o errors.md     # 20 lines of context
+  packx -s "FIXME" --lines 10             # Long form flag
+  
+  # Context windows are automatically merged when they overlap!
+  # If two TODOs are 3 lines apart with -l 5, you get one combined window
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. CONFIG FILES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Create config templates
+  packx init                        # Creates pack-config.txt
+  packx init todos.txt              # Custom name
+  packx init team-search.config     # Any extension
+  
+  # Use config files
+  packx -f todos.txt
+  packx -f api-search.txt -o api.md
+  packx -f hooks.txt --style markdown --compress
+  
+  # Combine config with CLI args (CLI adds to config)
+  packx -f base.txt -s "extraSearch" -e "vue"
+
+  Example config file (todos.txt):
+  ────────────────────────────────
   [search]
-  useState
-  useEffect
-  componentDidMount
+  TODO
+  FIXME
+  HACK
+  XXX
+  NOTE
   
   [extensions]
+  # Leave empty for all defaults
+  # Or specify specific ones:
   ts
   tsx
+  js
   jsx
   
   [exclude]
-  d.ts
-  test.ts
-  spec.ts
+  node_modules
+  .min.js
+  dist
+  build
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. OUTPUT OPTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Different output formats
+  packx -s "API" --style markdown -o api.md
+  packx -s "API" --style xml -o api.xml
+  packx -s "API" --style plain -o api.txt
   
-  # Lines starting with # are comments
-  # Empty lines are ignored
-  # Each line in a section is treated as a separate value
+  # Copy to clipboard (multiple ways)
+  packx -s "bug" --copy              # Long form
+  packx -s "bug" -c                  # Short form
+  packx -s "bug" -l 10 -c            # With context + copy
+  
+  # Preview mode (just list files, no bundling)
+  packx -s "deprecated" --preview
+  packx -s "legacy" -e "js" --preview
 
-All additional flags are forwarded to Repomix. Common examples:
-  --compress
-  --style markdown
-  -o repomix-output.md
-  --remove-comments
-  --token-count-tree
-  --instruction-file-path ./repomix-instruction.md
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. REPOMIX INTEGRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Notes:
-- Multiple -s flags can be used to search for multiple strings
-- Strings can contain ANY characters including commas, spaces, special chars
-- Extensions in -x are matched from the end (e.g., "d.ts" matches "*.d.ts")
-- Only local directories are supported as inputs (positional). Default: "."
+  # All Repomix flags pass through automatically
+  packx -s "class" --compress --remove-comments
+  packx -s "function" --token-count-tree
+  packx -s "import" --instruction-file-path ./instructions.md
+  
+  # Complex Repomix examples
+  packx -s "useState" -e "tsx" \\
+        --compress \\
+        --style markdown \\
+        --remove-comments \\
+        --token-count-tree \\
+        -o react-analysis.md
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                           REAL-WORLD WORKFLOWS                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+📱 REACT NATIVE DEBUGGING
+  # Find all state management issues
+  packx -s "setState" -s "useState" -s "redux" -s "mobx" \\
+        -e "tsx,jsx" -l 30 -o state-debug.md
+  
+  # Find navigation problems
+  packx -s "navigation" -s "navigate" -s "route" \\
+        -e "tsx" -x "test.tsx" --compress
+
+🔧 REFACTORING PREPARATION
+  # Find all deprecated patterns
+  packx -s "componentWillMount" -s "componentWillReceiveProps" \\
+        -s "componentWillUpdate" -e "jsx,tsx" -o deprecated.md
+  
+  # Find all console.logs to remove
+  packx -s "console.log" -s "console.debug" \\
+        -x "test.js" --preview
+
+🏗️ ARCHITECTURE REVIEW
+  # Find all API endpoints
+  packx -s "/api/" -s "fetch(" -s "axios" -s ".get(" -s ".post(" \\
+        -e "ts,tsx,js" -o api-surface.md
+  
+  # Find all database queries
+  packx -s "SELECT" -s "INSERT" -s "UPDATE" -s "DELETE" \\
+        -s "mongodb" -s "mongoose" -o database-layer.md
+
+🧪 TEST COVERAGE ANALYSIS
+  # Find untested functions
+  packx -s "export function" -s "export const" -e "ts" \\
+        -x "test.ts" -x "spec.ts" -o possibly-untested.md
+  
+  # Find all test files
+  packx -s "describe(" -s "test(" -s "it(" \\
+        -e "test.ts,spec.ts,test.js,spec.js" -o all-tests.md
+
+🚀 PERFORMANCE OPTIMIZATION
+  # Find potential performance issues
+  packx -s "forEach" -s "map" -s "filter" -s "reduce" \\
+        -s "for (" -s "while (" -l 20 -o loops-analysis.md
+  
+  # Find all async operations
+  packx -s "async" -s "await" -s "Promise" -s "then(" \\
+        -e "ts,tsx" -l 30 --compress
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                              OPTIONS REFERENCE                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+PACKX OPTIONS
+  -s, --strings STRING        Search string (use multiple times) [required]
+  -e, --extensions EXTS       Include only these extensions (comma-separated)
+  -x, --exclude-extensions    Exclude these patterns (matched from end)
+  -f, --file PATH            Read configuration from file
+  -l, --lines NUMBER         Context lines around matches (default: entire file)
+      --preview              List matched files without bundling
+  -h, --help                 Show this help message
+  -v, --version              Show version number
+
+REPOMIX PASSTHROUGH OPTIONS
+  -o, --output PATH          Output file path (default: repomix-output.xml)
+      --style FORMAT         Output format: xml, markdown, plain
+      --compress             Compress output for smaller size
+  -c, --copy                 Copy output to clipboard
+      --remove-comments      Strip comments from code
+      --token-count-tree     Show token count statistics
+      --instruction-file-path  Custom instructions file
+  
+  (All other Repomix flags are automatically passed through)
+
+DEFAULT EXTENSIONS
+  When -e is not specified, packx searches ALL of these by default:
+  
+  • Languages: js, jsx, ts, tsx, mjs, cjs, py, rb, go, java, cpp, c, h,
+               rs, swift, kt, scala, php
+  • Frameworks: vue, svelte, astro
+  • Styles: css, scss, less
+  • Config: json, yaml, yml, toml, xml
+  • Docs: md, mdx, txt
+  • Scripts: sh, bash, zsh, fish
+  • Data: sql, graphql, gql
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                              TIPS & TRICKS                                   │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+💡 PRO TIPS
+
+  1. Use --preview first to verify your search:
+     packx -s "password" --preview
+     # Check the file list, then run without --preview
+
+  2. Combine multiple patterns for OR logic:
+     packx -s "error" -s "exception" -s "fail" -s "crash"
+     # Finds files with ANY of these strings
+
+  3. Use config files for team sharing:
+     # Create standard searches for your team
+     packx init team-standards.txt
+     git add team-standards.txt
+     git commit -m "Add team search patterns"
+
+  4. Context lines for token optimization:
+     # Instead of sending entire files to AI:
+     packx -s "bug" -l 20    # Just 20 lines around bugs
+     packx -s "TODO" -l 5    # Minimal context for TODOs
+
+  5. Quick clipboard for AI chats:
+     # Search and instantly copy for ChatGPT/Claude
+     packx -s "function calculatePrice" -l 50 -c
+     # Now just paste into your AI chat!
+
+⚠️ COMMON PITFALLS
+
+  • Don't use dots in extensions: use "ts" not ".ts"
+  • Patterns are case-sensitive: "TODO" ≠ "todo"
+  • Use quotes for special chars in shell: -s "foo()"
+  • Large repos: use -e to limit extensions: -e "ts,tsx"
+  • -x matches from END: "d.ts" matches "*.d.ts" files
+
+📊 PERFORMANCE NOTES
+
+  • Packx uses ripgrep-like algorithms for speed
+  • .gitignore patterns are respected automatically
+  • Binary files are skipped automatically
+  • Files > 10MB are skipped for safety
+  • Use --preview to estimate before processing
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                               ABOUT PACKX                                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+  Version: v1.4.1
+  Author: John Lindquist
+  License: MIT
+  Repository: https://github.com/johnlindquist/pack
+  
+  Packx is a smart wrapper around Repomix that filters files BEFORE bundling,
+  ensuring you only package what you need. Perfect for focused AI analysis,
+  code reviews, debugging sessions, and codebase exploration.
+
+  Report issues: https://github.com/johnlindquist/pack/issues
+  Star if useful: https://github.com/johnlindquist/pack ⭐
 
 `;
   process.stdout.write(txt);
@@ -458,7 +691,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v1.4.0");
+    console.log("packx v1.4.1");
     process.exit(0);
   }
 
