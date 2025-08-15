@@ -22,7 +22,7 @@ Pack is a powerful CLI wrapper for [Repomix](https://github.com/yamadashy/repomi
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/pack.git
+git clone https://github.com/johnlindquist/pack.git
 cd pack
 
 # Install dependencies
@@ -278,7 +278,7 @@ All Repomix options work as normal:
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/pack.git
+git clone https://github.com/johnlindquist/pack.git
 cd pack
 
 # Install dependencies
