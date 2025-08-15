@@ -17,6 +17,8 @@ import { glob } from "glob";
 type Argv = mri.Argv & {
   strings?: string | string[];
   s?: string | string[];
+  "exclude-strings"?: string | string[];
+  S?: string | string[];
   extensions?: string;
   e?: string;
   "exclude-extensions"?: string;
@@ -25,6 +27,8 @@ type Argv = mri.Argv & {
   f?: string;
   lines?: number;
   l?: number;
+  "case-sensitive"?: boolean;
+  C?: boolean;
   preview?: boolean;
   help?: boolean;
   h?: boolean;
@@ -127,9 +131,17 @@ USAGE
   packx -s "interface" -e "ts" -x "d.ts"     # Exclude .d.ts files
   packx -s "test" -x "spec.ts" -x "test.ts"  # Exclude test files
   packx -s "build" -x ".min.js" -x ".min.css" # Exclude minified
+  
+  # Exclude files containing specific strings
+  packx -s "useState" -S "test" -S "mock"    # Find useState, skip test/mock files
+  packx -s "API" -S "deprecated" -S "legacy" # Find API, skip deprecated/legacy
+  
+  # Case-sensitive search (default is case-insensitive)
+  packx -s "API" -C                          # Match API but not api or Api
+  packx -s "TODO" --case-sensitive           # Match TODO but not todo
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-3. CONTEXT LINES (NEW!)
+3. CONTEXT LINES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   # Extract only N lines around each match (not entire files!)
@@ -270,10 +282,12 @@ USAGE
 
 PACKX OPTIONS
   -s, --strings STRING        Search string (use multiple times) [required]
+  -S, --exclude-strings       Exclude files containing these strings
   -e, --extensions EXTS       Include only these extensions (comma-separated)
   -x, --exclude-extensions    Exclude these patterns (matched from end)
   -f, --file PATH            Read configuration from file
   -l, --lines NUMBER         Context lines around matches (default: entire file)
+  -C, --case-sensitive       Make search case-sensitive (default: case-insensitive)
       --preview              List matched files without bundling
   -h, --help                 Show this help message
   -v, --version              Show version number
@@ -334,7 +348,7 @@ DEFAULT EXTENSIONS
 ⚠️ COMMON PITFALLS
 
   • Don't use dots in extensions: use "ts" not ".ts"
-  • Patterns are case-sensitive: "TODO" ≠ "todo"
+  • Search is case-insensitive by default (use -C for case-sensitive)
   • Use quotes for special chars in shell: -s "foo()"
   • Large repos: use -e to limit extensions: -e "ts,tsx"
   • -x matches from END: "d.ts" matches "*.d.ts" files
@@ -493,13 +507,20 @@ function formatContextWindows(windows: ContextWindow[], filePath: string): strin
   return output;
 }
 
-async function fileContainsAnyStrings(absPath: string, pattern: RegExp): Promise<boolean> {
+async function fileContainsAnyStrings(absPath: string, pattern: RegExp, excludePattern?: RegExp | null): Promise<boolean> {
   try {
     const stat = await fs.stat(absPath);
     // Skip extremely large files (> 10MB) as a guard (Repomix ignores most binaries anyway)
     if (stat.size > 10 * 1024 * 1024) return false;
 
     const buf = await fs.readFile(absPath, "utf8");
+    
+    // First check if file contains excluded strings
+    if (excludePattern && excludePattern.test(buf)) {
+      return false;
+    }
+    
+    // Then check if file contains required strings
     return pattern.test(buf);
   } catch {
     return false;
@@ -511,15 +532,19 @@ function buildRepomixPassthroughArgs(parsed: Argv): string[] {
   const reserved = new Set([
     "_",
     "strings",
+    "exclude-strings",
     "extensions",
     "exclude-extensions",
     "file",
     "lines",
+    "case-sensitive",
     "s",
+    "S",
     "e",
     "x",
     "f",
     "l",
+    "C",
     "preview",
     "help",
     "h",
@@ -674,16 +699,18 @@ async function main() {
   const parsed = mri(process.argv.slice(2), {
     alias: {
       s: "strings",
+      S: "exclude-strings",
       e: "extensions",
       x: "exclude-extensions",
       f: "file",
       l: "lines",
+      C: "case-sensitive",
       h: "help",
       v: "version"
     },
-    string: ["strings", "s", "extensions", "e", "exclude-extensions", "x", "file", "f"],
+    string: ["strings", "s", "exclude-strings", "S", "extensions", "e", "exclude-extensions", "x", "file", "f"],
     number: ["lines", "l"],
-    boolean: ["preview", "help", "h", "version", "v"]
+    boolean: ["case-sensitive", "C", "preview", "help", "h", "version", "v"]
   }) as Argv;
 
   if (parsed.help || parsed.h) {
@@ -691,13 +718,15 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v1.4.1");
+    console.log("packx v1.5.0");
     process.exit(0);
   }
 
   let strings: string[] = [];
+  let excludeStrings: string[] = [];
   let extensions: Set<string>;
   let excludeExtensions: Set<string>;
+  const caseSensitive = parsed["case-sensitive"] || parsed.C || false;
 
   // Check if config file is provided
   const configFile = parsed.file || parsed.f;
@@ -710,6 +739,12 @@ async function main() {
     // Allow command-line args to add to config file values
     strings.push(...normalizeStrings(parsed.strings));
     strings.push(...normalizeStrings(parsed.s));
+    
+    // Collect exclude strings from CLI
+    excludeStrings = [
+      ...normalizeStrings(parsed["exclude-strings"]),
+      ...normalizeStrings(parsed.S)
+    ].filter(Boolean);
     
     const cliExtensions = parsed.extensions || parsed.e;
     const cliExtList = Array.isArray(cliExtensions) 
@@ -731,6 +766,12 @@ async function main() {
     strings = [
       ...normalizeStrings(parsed.strings),
       ...normalizeStrings(parsed.s)
+    ].filter(Boolean);
+
+    // Collect exclude strings from -S flags
+    excludeStrings = [
+      ...normalizeStrings(parsed["exclude-strings"]),
+      ...normalizeStrings(parsed.S)
     ].filter(Boolean);
 
     // Handle both single string and array of strings for extensions
@@ -773,7 +814,11 @@ async function main() {
   }
 
   const roots = parsed._.length ? parsed._ : ["."];
-  const pattern = new RegExp(strings.map(escRegex).join("|"), "i");
+  const regexFlags = caseSensitive ? "" : "i";
+  const pattern = new RegExp(strings.map(escRegex).join("|"), regexFlags);
+  const excludePattern = excludeStrings.length > 0 
+    ? new RegExp(excludeStrings.map(escRegex).join("|"), regexFlags)
+    : null;
 
   // 1) Discover files (respecting .gitignore) under each root
   const candidates = new Set<string>();
@@ -835,7 +880,7 @@ async function main() {
   // 2) Content filter
   const matched: string[] = [];
   for (const p of candidates) {
-    if (await fileContainsAnyStrings(p, pattern)) {
+    if (await fileContainsAnyStrings(p, pattern, excludePattern)) {
       matched.push(path.resolve(p));
     }
   }
