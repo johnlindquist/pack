@@ -649,7 +649,7 @@ async function parseConfigFile(filePath: string): Promise<{
   }
 }
 
-async function createConfigTemplate(filename: string = 'pack-config.txt') {
+async function createConfigTemplate(filename: string = 'pack-config.packx') {
   const template = `# Pack configuration file
 # Search for specific strings in your codebase
 # Lines starting with # are comments
@@ -697,6 +697,37 @@ async function createConfigTemplate(filename: string = 'pack-config.txt') {
       // File doesn't exist, proceed
     }
 
+    // Check if directory exists, create if needed
+    const dir = path.dirname(filename);
+    if (dir && dir !== '.' && dir !== '') {
+      try {
+        await fs.access(dir);
+      } catch {
+        // Directory doesn't exist, prompt user
+        console.log(`📁 Directory '${dir}' does not exist.`);
+        
+        // Import readline for user input
+        const readline = await import('readline');
+        const rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout
+        });
+        
+        const answer = await new Promise<string>((resolve) => {
+          rl.question('Would you like to create it? (y/n): ', resolve);
+        });
+        rl.close();
+        
+        if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
+          await fs.mkdir(dir, { recursive: true });
+          console.log(`✅ Created directory: ${dir}`);
+        } else {
+          console.log('❌ Directory creation cancelled.');
+          process.exit(1);
+        }
+      }
+    }
+
     await fs.writeFile(filename, template, 'utf8');
     console.log(`✅ Created config template: ${filename}`);
     console.log(`\nEdit the file and then run:`);
@@ -710,7 +741,13 @@ async function createConfigTemplate(filename: string = 'pack-config.txt') {
 async function main() {
   // Check for init command first
   if (process.argv[2] === 'init') {
-    const filename = process.argv[3] || 'pack-config.txt';
+    let filename = process.argv[3] || 'pack-config.packx';
+    
+    // Add .packx extension if no extension provided
+    if (filename && !path.extname(filename)) {
+      filename = `${filename}.packx`;
+    }
+    
     await createConfigTemplate(filename);
     process.exit(0);
   }
@@ -729,7 +766,6 @@ async function main() {
       v: "version"
     },
     string: ["strings", "s", "exclude-strings", "S", "extensions", "e", "exclude-extensions", "x", "file", "f"],
-    number: ["lines", "l"],
     boolean: ["case-sensitive", "C", "preview", "help", "h", "version", "v"]
   }) as Argv;
 
@@ -738,7 +774,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v2.0.2");
+    console.log("packx v2.1.0");
     process.exit(0);
   }
 
@@ -930,8 +966,6 @@ async function main() {
   }
 
   // 3) Run Repomix using custom implementation since stdin and include are broken
-  const passthrough = buildRepomixPassthroughArgs(parsed);
-  
   // Convert matched files to relative paths
   const cwd = process.cwd();
   const relativePaths = matched.map(p => path.relative(cwd, p));
