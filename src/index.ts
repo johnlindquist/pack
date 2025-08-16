@@ -61,13 +61,13 @@ USAGE
      npm install -g packx
 
   2. Create a search config:
-     packx init my-search.txt
+     packx init my-search
 
   3. Edit the config with your patterns:
-     nano my-search.txt
+     nano my-search.ini
 
   4. Run the search:
-     packx -f my-search.txt -o results.md
+     packx -f my-search.ini -o results.md
 
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │                           COMMON USE CASES                                   │
@@ -157,9 +157,9 @@ USAGE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   # Create config templates
-  packx init                        # Creates pack-config.txt
-  packx init todos.txt              # Custom name
-  packx init team-search.config     # Any extension
+  packx init                        # Creates pack-config.ini
+  packx init todos                  # Creates todos.ini
+  packx init team-search.config     # Keep custom extension if specified
   
   # Use config files
   packx -f todos.txt
@@ -588,13 +588,11 @@ async function parseConfigFile(filePath: string): Promise<{
   search: string[];
   extensions: string[];
   exclude: string[];
-  excludePatterns: string[];
 }> {
   const config = {
     search: [] as string[],
     extensions: [] as string[],
-    exclude: [] as string[],
-    excludePatterns: [] as string[]
+    exclude: [] as string[]
   };
 
   try {
@@ -624,18 +622,7 @@ async function parseConfigFile(filePath: string): Promise<{
       
       // Add line to current section
       if (currentSection) {
-        if (currentSection === 'exclude') {
-          // Determine if it's a pattern or extension
-          if (trimmed.includes('/') || trimmed.includes('*')) {
-            // It's a glob pattern or directory
-            config.excludePatterns.push(trimmed);
-          } else {
-            // It's likely a file extension
-            config.exclude.push(trimmed);
-          }
-        } else {
-          config[currentSection].push(trimmed);
-        }
+        config[currentSection].push(trimmed);
       }
     }
     
@@ -649,7 +636,7 @@ async function parseConfigFile(filePath: string): Promise<{
   }
 }
 
-async function createConfigTemplate(filename: string = 'pack-config.packx') {
+async function createConfigTemplate(filename: string = 'pack-config.ini') {
   const template = `# Pack configuration file
 # Search for specific strings in your codebase
 # Lines starting with # are comments
@@ -672,19 +659,18 @@ async function createConfigTemplate(filename: string = 'pack-config.packx') {
 # jsx
 
 [exclude]
-# Exclude patterns - supports:
-#   - File extensions (matched from end): d.ts, test.ts
-#   - Directories: docs/, site/
-#   - Glob patterns: **/*.test.ts, docs/**
+# Exclude patterns using gitignore syntax
 # Examples:
-# d.ts
-# test.ts
-# spec.ts
-# .min.js
-# docs/
-# site/
-# **/*.test.ts
-# examples/**
+# *.d.ts              # All TypeScript declaration files
+# *.test.ts           # All test files
+# *.spec.ts           # All spec files  
+# *.min.js            # All minified JS files
+# docs/               # Docs directory
+# site/               # Site directory
+# **/test/**          # Any test directories
+# **/*.test.ts        # Test files anywhere
+# examples/**         # Everything under examples
+# !important.test.ts  # Exception: include this test file
 `;
 
   try {
@@ -741,11 +727,11 @@ async function createConfigTemplate(filename: string = 'pack-config.packx') {
 async function main() {
   // Check for init command first
   if (process.argv[2] === 'init') {
-    let filename = process.argv[3] || 'pack-config.packx';
+    let filename = process.argv[3] || 'pack-config.ini';
     
-    // Add .packx extension if no extension provided
+    // Add .ini extension if no extension provided
     if (filename && !path.extname(filename)) {
-      filename = `${filename}.packx`;
+      filename = `${filename}.ini`;
     }
     
     await createConfigTemplate(filename);
@@ -774,14 +760,13 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v2.1.0");
+    console.log("packx v2.2.0");
     process.exit(0);
   }
 
   let strings: string[] = [];
   let excludeStrings: string[] = [];
   let extensions: Set<string>;
-  let excludeExtensions: Set<string>;
   let excludePatterns: string[] = [];
   const caseSensitive = parsed["case-sensitive"] || parsed.C || false;
 
@@ -791,8 +776,7 @@ async function main() {
     const config = await parseConfigFile(configFile);
     strings = config.search;
     extensions = toExtSet(config.extensions);
-    excludeExtensions = toExtSet(config.exclude);
-    excludePatterns = config.excludePatterns;
+    excludePatterns = config.exclude;  // Treat all excludes as gitignore patterns
     
     // Allow command-line args to add to config file values
     strings.push(...normalizeStrings(parsed.strings));
@@ -812,12 +796,22 @@ async function main() {
       extensions.add(ext);
     }
     
+    // Handle CLI exclude patterns
     const cliExclude = parsed["exclude-extensions"] || parsed.x;
     const cliExcludeList = Array.isArray(cliExclude)
       ? cliExclude.flatMap(v => parseCSV(String(v)))
       : parseCSV(cliExclude);
-    for (const ext of toExtSet(cliExcludeList)) {
-      excludeExtensions.add(ext);
+    
+    // Convert extensions to gitignore patterns
+    for (const excl of cliExcludeList) {
+      if (excl) {
+        // If it looks like an extension, convert to gitignore pattern
+        if (!excl.includes('/') && !excl.includes('*')) {
+          excludePatterns.push(`**/*.${excl.replace(/^\./, '')}`);
+        } else {
+          excludePatterns.push(excl);
+        }
+      }
     }
   } else {
     // Collect all strings from multiple -s flags
@@ -839,12 +833,23 @@ async function main() {
       : parseCSV(extensionValues);
     extensions = toExtSet(extensionsList);
 
-    // Handle both single string and array of strings for exclude-extensions
+    // Handle exclude patterns from CLI
     const excludeValues = parsed["exclude-extensions"] || parsed.x;
     const excludeList = Array.isArray(excludeValues)
       ? excludeValues.flatMap(v => parseCSV(String(v)))
       : parseCSV(excludeValues);
-    excludeExtensions = toExtSet(excludeList);
+    
+    // Convert to gitignore patterns
+    for (const excl of excludeList) {
+      if (excl) {
+        // If it looks like an extension, convert to gitignore pattern
+        if (!excl.includes('/') && !excl.includes('*')) {
+          excludePatterns.push(`**/*.${excl.replace(/^\./, '')}`);
+        } else {
+          excludePatterns.push(excl);
+        }
+      }
+    }
   }
 
   strings = strings.filter(Boolean);
@@ -914,19 +919,8 @@ async function main() {
       });
       
       for (const file of files) {
-        // Check if file should be excluded based on exclude-extensions
-        let shouldExclude = false;
-        for (const excl of excludeExtensions) {
-          const exclPattern = excl.startsWith('.') ? excl : `.${excl}`;
-          if (file.endsWith(exclPattern)) {
-            shouldExclude = true;
-            break;
-          }
-        }
-        
-        if (!shouldExclude) {
-          candidates.add(file);
-        }
+        // All filtering is now done via glob ignore patterns
+        candidates.add(file);
       }
     }
   }
