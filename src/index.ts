@@ -1119,13 +1119,17 @@ ${content}
     }
   }
   
-  // Write the output file
-  await fs.writeFile(outputFile, output, 'utf8');
-  
-  console.log(`\n✅ Successfully packed ${matched.length} file(s) to ${outputFile}`);
+  // Write the output (file or stdout)
+  const toStdout = outputFile === '-' || Boolean((parsed as any).stdout);
+  if (toStdout) {
+    process.stdout.write(output);
+  } else {
+    await fs.writeFile(outputFile, output, 'utf8');
+    console.log(`\n✅ Successfully packed ${matched.length} file(s) to ${outputFile}`);
+  }
   
   // Handle passthrough args like --copy
-  if (parsed.copy || parsed.c) {
+  if (!toStdout && (parsed.copy || parsed.c)) {
     try {
       // Copy to clipboard using the native clipboard API via a child process
       const { spawn } = await import('child_process');
@@ -1172,24 +1176,25 @@ ${content}
   const totalChars = output.length;
   const totalTokens = Math.round(totalChars / 4); // Rough estimate
   
-  console.log(`\n📊 Pack Summary:`);
-  console.log(`────────────────`);
-  console.log(`  Total Files: ${matched.length} files`);
+  const log = (msg: string) => (toStdout ? console.error(msg) : console.log(msg));
+  log(`\n📊 Pack Summary:`);
+  log(`────────────────`);
+  log(`  Total Files: ${matched.length} files`);
   if (contextLines) {
-    console.log(`  Context Lines: ${contextLines} around each match`);
-    console.log(`  Total Matches: ${totalMatchCount} matches`);
-    console.log(`  Context Windows: ${totalWindowCount} windows`);
+    log(`  Context Lines: ${contextLines} around each match`);
+    log(`  Total Matches: ${totalMatchCount} matches`);
+    log(`  Context Windows: ${totalWindowCount} windows`);
   }
-  console.log(`  Total Tokens: ~${totalTokens.toLocaleString()} tokens`);
-  console.log(`  Total Chars: ${totalChars.toLocaleString()} chars`);
-  console.log(`       Output: ${outputFile}`);
+  log(`  Total Tokens: ~${totalTokens.toLocaleString()} tokens`);
+  log(`  Total Chars: ${totalChars.toLocaleString()} chars`);
+  log(`       Output: ${toStdout ? '-' : outputFile}`);
   
   // Show found extensions
   if (foundExtensions.size > 0) {
     const sortedExtensions = Array.from(foundExtensions).sort();
-    console.log(`\n📁 Extensions Found:`);
-    console.log(`────────────────────`);
-    console.log(`  ${sortedExtensions.join(', ')}`);
+    log(`\n📁 Extensions Found:`);
+    log(`────────────────────`);
+    log(`  ${sortedExtensions.join(', ')}`);
   }
   
   // Show top files by size
@@ -1198,13 +1203,13 @@ ${content}
       .sort((a, b) => b.tokens - a.tokens)
       .slice(0, 10);
     
-    console.log(`\n📂 Top 10 Files (by tokens):`);
-    console.log(`──────────────────────────`);
+    log(`\n📂 Top 10 Files (by tokens):`);
+    log(`──────────────────────────`);
     for (const file of topFiles) {
       const fileName = path.basename(file.path);
       const dirName = path.dirname(file.path);
       const shortPath = dirName === '.' ? fileName : `${dirName}/${fileName}`;
-      console.log(`  ${file.tokens.toLocaleString().padStart(8)} tokens - ${shortPath}`);
+      log(`  ${file.tokens.toLocaleString().padStart(8)} tokens - ${shortPath}`);
     }
   }
 }
