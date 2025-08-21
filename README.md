@@ -135,6 +135,77 @@ Search in specific file types:
 packx -s "useState" -s "useEffect" -e "ts,tsx"
 ```
 
+### Concept Mode
+
+Automatically discover and extract related concepts from your codebase:
+
+```bash
+# Preview concepts and inspect keywords/files (no bundling)
+packx concept "error handling" --preview -- --style markdown -l 20
+
+# Pass flags to pack using -- (after concept flags)
+packx concept "auth login" -k 12 -t 30 -- --style markdown -l 10 -o auth.md
+
+# Let concept mode infer extensions when not provided
+packx concept "react hooks" -- --o hooks.md
+
+# Use your local CLI instead of global packx
+PACKX_BIN="bun run /path/to/pack/src/index.ts" \
+  packx concept "secrets tokens" -- --e ts,js,json -o security.md
+```
+
+#### How Concept Mode Works
+
+1. **Indexes your codebase** - Uses MiniSearch to build a full-text search index
+2. **Ranks files by relevance** - Finds files most related to your search terms
+3. **Extracts related keywords** - Tokenizes identifiers/comments, scores with TF‑IDF, filters noise
+4. **Runs intelligent search** - Executes pack with discovered keywords; infers `-e` and adds `-x d.ts` by default
+
+#### Real-World Use Cases
+
+**🔍 Finding Error Handling Patterns**
+```bash
+packx concept "error handling"
+```
+This will find not just files with "error" and "handling", but also:
+- Files with `handleError`, `errorHandler`, `handleException`
+- Error boundary components
+- Try-catch blocks and error logging utilities
+
+**🏗️ Exploring Architecture Patterns**
+```bash
+packx concept "dependency injection"
+```
+Discovers related patterns like:
+- `inject`, `injector`, `dependencies`, `provider`, `container`
+
+**🧪 Gathering Test Files**
+```bash
+packx concept "unit test"
+```
+Finds all testing-related code:
+- Files with `test`, `tests`, `testing`, `spec`, `describe`, `it`
+- Test utilities and helpers
+- Mock and stub implementations
+
+#### When to Use Concept Mode
+
+✅ **Use concept mode when:**
+- You want to explore a topic but don't know all the exact terms
+- You need to find related code patterns and implementations
+- You're learning a new codebase and want to understand conventions
+- You need comprehensive coverage of a concept
+
+❌ **Use regular search when:**
+  
+Tips:
+- Use `--preview` first. It shows generated keywords, top files, and inferred extensions.
+- Flags after `--` go to the pack run. Example: `-- --style markdown -l 20 -o out.md`.
+- By default, concept mode infers extensions and excludes `d.ts`; include your own `-e`/`-x` to override.
+- You know the exact strings you're looking for
+- You need precise, targeted results
+- You want to exclude certain variations
+
 ### Context Lines
 
 Extract only the surrounding context instead of entire files:

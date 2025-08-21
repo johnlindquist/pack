@@ -30,6 +30,7 @@
   "scripts": {
     "build": "bun build ./src/index.ts --outdir dist --target node --format esm",
     "dev": "bun run ./src/index.ts --help",
+    "dev:concept": "bun run ./src/index.ts concept",
     "prepublishOnly": "npm run build && npm run update-version-in-code",
     "update-version-in-code": "node scripts/update-version.js",
     "release:patch": "npm version patch && npm publish && git push && git push --tags",
@@ -45,6 +46,7 @@
   },
   "dependencies": {
     "glob": "^10.3.10",
+    "minisearch": "^7.1.2",
     "mri": "^1.2.0",
     "repomix": "^1.2.1"
   },

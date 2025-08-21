@@ -1,3 +1,1310 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+# File Summary
+
+## Purpose
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+
+## File Format
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  a. A header with the file path (## File: path/to/file)
+  b. The full contents of the file in a code block
+
+## Usage Guidelines
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+
+## Notes
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+
+# Directory Structure
+```
+.claude/
+  settings.local.json
+scripts/
+  update-version.js
+src/
+  concept.ts
+  index.ts
+.gitignore
+.npmignore
+api-calls.txt
+example-search.txt
+index.ts
+package.json
+PUBLISHING.md
+react-hooks.txt
+README.md
+TESTING.md
+tsconfig.json
+```
+
+# Files
+
+## File: src/concept.ts
+````typescript
+#!/usr/bin/env node
+import MiniSearch from 'minisearch';
+import { glob } from 'glob';
+import fs from 'fs';
+import path from 'path';
+import { spawn } from 'child_process';
+
+export async function runConceptMode(searchString: string) {
+  console.log(`Extracting concepts related to: "${searchString}"`);
+  
+  // Discover files (common code extensions)
+  const extensions = ['ts', 'tsx', 'js', 'jsx', 'py', 'java', 'cpp', 'c', 'go', 'rs'];
+  const pattern = `**/*.{${extensions.join(',')}}`;
+  const files = await glob(pattern, {
+    ignore: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/build/**', '**/.next/**']
+  });
+  
+  console.log(`Found ${files.length} files to index`);
+  
+  // Build lexical index
+  const miniSearch = new MiniSearch({
+    fields: ['content'],
+    storeFields: ['path']
+  });
+  
+  const documents = [];
+  for (const file of files) {
+    const content = fs.readFileSync(file, 'utf-8');
+    documents.push({
+      id: file,
+      path: file,
+      content
+    });
+  }
+  
+  miniSearch.addAll(documents);
+  
+  // Search and rank
+  const results = miniSearch.search(searchString, {
+    boost: { content: 2 },
+    fuzzy: 0.2
+  });
+  
+  // Extract top content
+  const topResults = results.slice(0, 10); // Reduced from 20 to avoid stack overflow
+  let combinedContent = '';
+  const maxContentLength = 50000; // Limit content to prevent RAKE stack overflow
+  
+  for (const result of topResults) {
+    const doc = documents.find(d => d.id === result.id);
+    if (doc) {
+      // Take only first part of each file to avoid too much content
+      const snippet = doc.content.slice(0, 5000);
+      combinedContent += snippet + '\n';
+      
+      if (combinedContent.length > maxContentLength) {
+        combinedContent = combinedContent.slice(0, maxContentLength);
+        break;
+      }
+    }
+  }
+  
+  // Extract keywords using a simpler approach
+  // RAKE doesn't work well with code, so let's extract meaningful terms from the top files
+  let topKeywords: string[] = [];
+  
+  // First, use the original search terms
+  const searchTerms = searchString.toLowerCase().split(' ').filter(w => w.length > 2);
+  
+  // Extract frequently occurring words from top results
+  const wordFrequency = new Map<string, number>();
+  
+  // Common code words to ignore
+  const stopWords = new Set(['const', 'let', 'var', 'function', 'return', 'import', 
+    'export', 'from', 'class', 'new', 'this', 'that', 'with', 'for', 'while', 
+    'if', 'else', 'switch', 'case', 'break', 'continue', 'try', 'catch', 
+    'finally', 'throw', 'async', 'await', 'typeof', 'instanceof', 'void',
+    'null', 'undefined', 'true', 'false', 'and', 'or', 'not', 'the', 'is',
+    'are', 'was', 'were', 'been', 'being', 'have', 'has', 'had', 'will',
+    'would', 'could', 'should', 'may', 'might', 'must', 'can', 'shall']);
+  
+  // Process content to find relevant keywords
+  const words = combinedContent
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')  // Keep only alphanumeric
+    .split(/\s+/)
+    .filter(word => 
+      word.length > 3 && 
+      word.length < 20 && 
+      !stopWords.has(word) &&
+      !word.match(/^\d+$/)  // Not just numbers
+    );
+  
+  // Count word frequency
+  for (const word of words) {
+    wordFrequency.set(word, (wordFrequency.get(word) || 0) + 1);
+  }
+  
+  // Get top frequent words that are semantically related to search terms
+  const sortedWords = Array.from(wordFrequency.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 50)  // Top 50 most frequent
+    .map(([word]) => word);
+  
+  // Find words related to search terms (contain or are contained by search terms)
+  const relatedWords = sortedWords.filter(word => {
+    return searchTerms.some(term => 
+      word.includes(term) || term.includes(word) || 
+      // Also check for common variations
+      word.includes(term.replace('ing', '')) ||
+      word.includes(term.replace('ed', '')) ||
+      word.includes(term.replace('s', ''))
+    );
+  }).slice(0, 5);
+  
+  // Combine original search terms with discovered related words
+  topKeywords = [...new Set([...searchTerms, ...relatedWords])].slice(0, 10);
+  
+  if (topKeywords.length === 0) {
+    console.log('No keywords extracted. Using original search terms.');
+    topKeywords = searchString.split(' ').filter(w => w.length > 0);
+  }
+  
+  console.log('Extracted keywords:', topKeywords.join(', '));
+  
+  // Run packx with keywords
+  const packxArgs = [
+    ...topKeywords.flatMap(k => ['-s', k])
+  ];
+  
+  console.log(`Running: packx ${packxArgs.join(' ')}`);
+  
+  const packx = spawn('packx', packxArgs, {
+    stdio: 'inherit',
+    shell: true
+  });
+  
+  packx.on('close', (code) => {
+    process.exit(code || 0);
+  });
+}
+````
+
+## File: TESTING.md
+````markdown
+# Testing Guide for Packx
+
+## Manual Testing Checklist
+
+### Basic Functionality
+- [ ] `packx --help` displays help
+- [ ] `packx --version` shows version
+- [ ] `packx init` creates default config
+- [ ] `packx init my-config` creates named config
+
+### Search Modes
+- [ ] `-s "string"` single search works
+- [ ] `-s "string1" -s "string2"` multiple searches work
+- [ ] `-f config.ini` config file works
+- [ ] Case-insensitive search by default
+- [ ] `-C` flag enables case-sensitive search
+
+### Concept Mode
+- [ ] `packx concept "search terms"` runs without error
+- [ ] Concept mode finds relevant files
+- [ ] Concept mode extracts keywords
+- [ ] Concept mode runs packx with extracted keywords
+
+### Context Lines
+- [ ] `-l 10` limits to 10 lines around matches
+- [ ] Context windows merge when overlapping
+- [ ] Line numbers display correctly
+
+### Extensions
+- [ ] Default (no `-e`) searches common code files
+- [ ] `-e "ts,tsx"` filters by extensions
+- [ ] `-x "d.ts"` excludes extensions
+
+### Exclude Patterns
+- [ ] Config file `[exclude]` section works
+- [ ] Gitignore-style patterns work
+- [ ] Directory exclusions work (`docs/`)
+- [ ] Glob patterns work (`**/*.test.ts`)
+
+### Output
+- [ ] Default output to `packx-output.md`
+- [ ] `-o custom.md` custom output works
+- [ ] `--copy` copies to clipboard
+- [ ] Summary statistics display correctly
+- [ ] Top 10 files by size display
+- [ ] Extensions list displays
+
+## Test Commands
+
+```bash
+# Basic search
+packx -s "TODO"
+
+# Multiple strings
+packx -s "console" -s "log" -e "js,ts"
+
+# Context lines
+packx -s "error" -l 20
+
+# Case sensitive
+packx -s "API" -C
+
+# Exclude strings
+packx -s "function" -S "test" -S "spec"
+
+# Config file
+echo "[search]
+TODO
+FIXME
+[extensions]
+ts
+tsx
+[exclude]
+*.test.ts
+docs/" > test.ini
+packx -f test.ini
+
+# Concept mode
+packx concept "authentication user login"
+
+# Preview mode
+packx -s "import" --preview
+
+# Copy to clipboard
+packx -s "export" --copy
+```
+
+## Edge Cases to Test
+
+1. **Empty results** - Search with no matches
+2. **Large files** - Files over 10MB are skipped
+3. **Binary files** - Should be ignored
+4. **Special characters** - Search for `[`, `]`, `(`, `)`, etc.
+5. **Unicode** - Search for emoji or non-ASCII
+6. **Symlinks** - Should follow or ignore?
+7. **Hidden files** - `.gitignore`, `.env`, etc.
+8. **No extension files** - `Makefile`, `Dockerfile`
+
+## Performance Testing
+
+```bash
+# Time a search in a large repo
+time packx -s "function" -e "js,ts,tsx,jsx"
+
+# Memory usage (use system monitor)
+packx -s "class" -s "interface" -s "type" -e "ts"
+```
+
+## Regression Tests
+
+After changes, verify:
+1. Existing config files still work
+2. CLI flag compatibility maintained
+3. Output format unchanged
+4. Repomix passthrough still works (if applicable)
+````
+
+## File: .claude/settings.local.json
+````json
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/johnlindquist/dev/kit-container"
+    ]
+  }
+}
+````
+
+## File: scripts/update-version.js
+````javascript
+#!/usr/bin/env node
+
+import { readFileSync, writeFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const rootDir = join(__dirname, '..');
+
+// Read package.json to get current version
+const packageJson = JSON.parse(readFileSync(join(rootDir, 'package.json'), 'utf8'));
+const version = packageJson.version;
+
+// Update version in src/index.ts
+const indexPath = join(rootDir, 'src', 'index.ts');
+let indexContent = readFileSync(indexPath, 'utf8');
+
+// Replace version in console.log statement
+indexContent = indexContent.replace(
+  /console\.log\("packx v[\d.]+"\);/,
+  `console.log("packx v${version}");`
+);
+
+writeFileSync(indexPath, indexContent);
+
+console.log(`✅ Updated version to ${version} in source code`);
+````
+
+## File: .npmignore
+````
+# Source files (we ship dist/)
+src/
+*.ts
+!*.d.ts
+
+# Config files
+tsconfig.json
+.gitignore
+
+# Binary files (too large for npm)
+bin/
+
+# Example files
+*.txt
+!README.md
+
+# Development files
+node_modules/
+bun.lock
+bun.lockb
+.git/
+.github/
+
+# Build files
+*.log
+.DS_Store
+
+# Test files
+test/
+*.test.*
+*.spec.*
+
+# Editor
+.vscode/
+.idea/
+
+# Temporary
+tmp/
+temp/
+````
+
+## File: api-calls.txt
+````
+# Find API calls and network requests
+
+[search]
+fetch(
+axios
+$.ajax
+XMLHttpRequest
+api/
+/api/
+graphql
+REST
+endpoint
+apiKey
+API_KEY
+bearer
+Authorization:
+
+[extensions]
+ts
+tsx
+js
+jsx
+vue
+svelte
+
+[exclude]
+# Skip tests and mocks
+test.
+spec.
+mock.
+__mocks__
+__tests__
+.test.
+.spec.
+# Skip configs and docs
+config.
+.config.
+README
+.md
+# Skip build artifacts
+.min.
+dist/
+build/
+````
+
+## File: example-search.txt
+````
+# Example search configuration for pack
+# This searches for console logging statements
+
+[search]
+console.log
+console.error
+console.warn
+console.debug
+console.info
+
+[extensions]
+ts
+tsx
+js
+jsx
+
+[exclude]
+# Exclude type definition files
+d.ts
+# Exclude test files
+test.ts
+spec.ts
+test.js
+spec.js
+````
+
+## File: index.ts
+````typescript
+console.log("Hello via Bun!");
+````
+
+## File: PUBLISHING.md
+````markdown
+# Publishing Guide
+
+## NPM Package (`packx`)
+
+The package is published to npm as `packx` and can be installed globally:
+
+```bash
+npm install -g packx
+```
+
+## Automated Release Process
+
+We use npm scripts to automate versioning, building, and publishing:
+
+### Quick Release Commands
+
+```bash
+# For bug fixes (1.0.0 -> 1.0.1)
+npm run release:patch
+
+# For new features (1.0.0 -> 1.1.0)
+npm run release:minor
+
+# For breaking changes (1.0.0 -> 2.0.0)
+npm run release:major
+```
+
+These commands will automatically:
+1. Bump the version in `package.json`
+2. Update the version in source code
+3. Build the distribution files
+4. Publish to npm
+5. Push changes to GitHub
+6. Create and push git tags
+
+### Manual Process (if needed)
+
+1. **Update version**
+   ```bash
+   npm version patch  # or minor/major
+   ```
+
+2. **Build and publish**
+   ```bash
+   npm publish
+   ```
+
+3. **Push to GitHub**
+   ```bash
+   git push && git push --tags
+   ```
+
+## Pre-release Checklist
+
+- [ ] All tests pass
+- [ ] README is up to date
+- [ ] CHANGELOG is updated (if maintaining one)
+- [ ] No sensitive information in code
+- [ ] Version number makes sense
+
+## Version Numbering
+
+Follow [Semantic Versioning](https://semver.org/):
+
+- **MAJOR** (1.0.0 -> 2.0.0): Breaking changes
+- **MINOR** (1.0.0 -> 1.1.0): New features, backwards compatible
+- **PATCH** (1.0.0 -> 1.0.1): Bug fixes, backwards compatible
+
+## What Gets Published
+
+The `.npmignore` file controls what's included in the npm package:
+
+### Included
+- `dist/` - Compiled JavaScript
+- `package.json` - Package metadata
+- `README.md` - Documentation
+
+### Excluded
+- Source TypeScript files
+- Config files
+- Binary builds
+- Example files
+- Development dependencies
+
+## Troubleshooting
+
+### "Cannot publish over previously published version"
+
+This means the version already exists on npm. Bump the version:
+
+```bash
+npm version patch
+npm publish
+```
+
+### Build Issues
+
+Make sure to build before publishing:
+
+```bash
+npm run build
+npm publish
+```
+
+### Authentication Issues
+
+Login to npm if needed:
+
+```bash
+npm login
+```
+
+## Platform Compatibility
+
+The npm package works on:
+- ✅ macOS (Intel & Apple Silicon)
+- ✅ Linux (x64 & ARM)
+- ✅ Windows (with Node.js)
+
+Requirements:
+- Node.js 18 or higher
+- npm, yarn, or pnpm
+
+## Binary Builds
+
+For standalone executables (without Node.js), use:
+
+```bash
+# Current platform
+npm run compile
+
+# Specific platforms
+npm run compile:macos
+npm run compile:macos-arm
+npm run compile:linux
+npm run compile:windows
+
+# All platforms
+npm run compile:all
+```
+
+Binary files are in the `bin/` directory but are NOT published to npm (too large).
+````
+
+## File: react-hooks.txt
+````
+# Search for React hooks usage
+
+[search]
+useState
+useEffect
+useCallback
+useMemo
+useRef
+useContext
+useReducer
+useLayoutEffect
+
+[extensions]
+tsx
+jsx
+ts
+js
+
+[exclude]
+# Skip declaration files
+d.ts
+# Skip test files  
+test.tsx
+spec.tsx
+test.jsx
+spec.jsx
+__tests__
+# Skip build output
+.min.js
+````
+
+## File: tsconfig.json
+````json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "types": ["node", "bun"],
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}
+````
+
+## File: .gitignore
+````
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Bun
+bun.lockb
+
+# macOS
+.DS_Store
+
+# Editor directories and files
+.idea
+.vscode
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Output files from pack (examples)
+*.xml
+output.*
+repomix-output.*
+# Keep documentation
+!README.md
+!PUBLISHING.md
+````
+
+## File: README.md
+````markdown
+# Packx - Smart File Filter and Bundler
+
+[![npm version](https://badge.fury.io/js/packx.svg)](https://www.npmjs.com/package/packx)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Packx is a powerful CLI tool that filters repository files by content and extension before bundling them for AI consumption. Search for specific strings in your codebase and bundle only the files that match - perfect for providing focused context to LLMs.
+
+```bash
+# Quick install
+npm install -g packx
+
+# Create a config template
+packx init
+
+# Search and bundle
+packx -s "useState" -e "tsx" -o react-hooks.md
+```
+
+## Features
+
+- 🔍 **Content-based filtering** - Only include files containing specific strings
+- 📁 **Smart defaults** - Searches common code files automatically (no extension flag needed!)
+- 🎨 **Flexible extensions** - Optionally filter by specific file types
+- 🔧 **Config files** - Save and reuse search patterns
+- ✂️ **Context lines** - Limit output to N lines around each match for focused results
+- ⚡ **Fast** - Direct file processing without external dependencies
+- 🎯 **Precise** - Search for multiple strings with special character support
+- 📊 **Smart merging** - Overlapping context windows are automatically merged
+
+## Installation
+
+### Option 1: Install from npm (Recommended)
+
+Works on Mac, Windows, and Linux with Node.js 18+:
+
+```bash
+# Install globally
+npm install -g packx
+
+# Or with yarn
+yarn global add packx
+
+# Or with pnpm
+pnpm add -g packx
+
+# Now use it anywhere
+packx --help
+pack --help  # Also available as 'pack'
+```
+
+### Option 2: Build from Source
+
+Prerequisites:
+- [Bun](https://bun.sh) (for building)
+- [Repomix](https://github.com/yamadashy/repomix) (installed automatically)
+
+```bash
+# Clone the repository
+git clone https://github.com/johnlindquist/pack.git
+cd pack
+
+# Install dependencies
+bun install
+
+# Build the executable
+bun run compile
+
+# Test it works
+./bin/pack --help
+```
+
+### Local Installation Options (for source builds)
+
+#### Option 1: Add the bin directory to PATH
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+echo 'export PATH="$HOME/dev/pack/bin:$PATH"' >> ~/.zshrc
+
+# Reload shell configuration
+source ~/.zshrc
+
+# Now you can use pack from anywhere
+pack --help
+```
+
+#### Option 2: Global link with Bun
+
+```bash
+# Create global link
+bun link
+
+# Use from anywhere
+pack --help
+```
+
+#### Option 3: Copy to system bin
+
+```bash
+# Copy to local bin (create if doesn't exist)
+mkdir -p ~/.local/bin
+cp bin/pack ~/.local/bin/
+
+# Make sure ~/.local/bin is in your PATH
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+## Usage
+
+### Quick Start
+
+```bash
+# Create a search config
+packx init my-search.txt
+
+# Edit it with your patterns
+nano my-search.txt
+
+# Run the search
+packx -f my-search.txt -o results.md
+```
+
+### Basic Usage
+
+Search for strings across all common code files (default):
+
+```bash
+packx -s "TODO" -s "FIXME"
+```
+
+Search in specific file types:
+
+```bash
+packx -s "useState" -s "useEffect" -e "ts,tsx"
+```
+
+### Concept Mode
+
+Automatically discover and extract related concepts from your codebase:
+
+```bash
+# Find error handling patterns
+packx concept "error handling"
+# → Discovers: error, handling, handle, errors, handler
+
+# Explore state management code
+packx concept "state management"  
+# → Discovers: state, management, setState, stateManager, kitstate
+
+# Find all testing code
+packx concept "testing"
+# → Discovers: testing, test, tests, tested, tester
+```
+
+#### How Concept Mode Works
+
+1. **Indexes your codebase** - Uses MiniSearch to build a full-text search index
+2. **Ranks files by relevance** - Finds files most related to your search terms
+3. **Extracts related keywords** - Analyzes top files to find frequently used related terms
+4. **Runs intelligent search** - Automatically executes packx with discovered keywords
+
+#### Real-World Use Cases
+
+**🔍 Finding Error Handling Patterns**
+```bash
+packx concept "error handling"
+```
+This will find not just files with "error" and "handling", but also:
+- Files with `handleError`, `errorHandler`, `handleException`
+- Error boundary components
+- Try-catch blocks and error logging utilities
+
+**🏗️ Exploring Architecture Patterns**
+```bash
+packx concept "dependency injection"
+```
+Discovers related patterns like:
+- `inject`, `injector`, `dependencies`, `provider`, `container`
+
+**🧪 Gathering Test Files**
+```bash
+packx concept "unit test"
+```
+Finds all testing-related code:
+- Files with `test`, `tests`, `testing`, `spec`, `describe`, `it`
+- Test utilities and helpers
+- Mock and stub implementations
+
+#### When to Use Concept Mode
+
+✅ **Use concept mode when:**
+- You want to explore a topic but don't know all the exact terms
+- You need to find related code patterns and implementations
+- You're learning a new codebase and want to understand conventions
+- You need comprehensive coverage of a concept
+
+❌ **Use regular search when:**
+- You know the exact strings you're looking for
+- You need precise, targeted results
+- You want to exclude certain variations
+
+### Context Lines
+
+Extract only the surrounding context instead of entire files:
+
+```bash
+# Show 10 lines around each TODO comment
+packx -s "TODO" -l 10 -o todos.md
+
+# Get focused context for debugging
+packx -s "error" -s "exception" -l 50 --style markdown
+
+# Minimal context for quick review
+packx -s "FIXME" -l 3
+```
+
+### Preview Mode
+
+See which files match before bundling:
+
+```bash
+pack -s "console.log" -e "js,ts" --preview
+```
+
+### Exclude Files
+
+Exclude TypeScript declaration files:
+
+```bash
+pack -s "interface" -e "ts" -x "d.ts"
+```
+
+### With Repomix Options
+
+All Repomix flags work seamlessly:
+
+```bash
+pack -s "TODO" -s "FIXME" -e "ts,tsx" \
+  --compress \
+  --style xml \
+  -o todos.xml \
+  --remove-comments
+```
+
+## Examples
+
+### Find React Hooks
+
+```bash
+pack -s "useState" -s "useEffect" -s "useCallback" \
+     -e "tsx,jsx" \
+     -x "test.tsx,spec.tsx" \
+     -o react-hooks.md
+```
+
+### Search with Special Characters
+
+Strings can contain any characters including commas, brackets, and spaces:
+
+```bash
+pack -s "array[index]" -s "foo,bar" -s "hello world" -e "js"
+```
+
+### Multiple Extension Formats
+
+Use multiple flags or comma-separated values:
+
+```bash
+# Multiple flags
+pack -s "import" -e "ts" -e "tsx" -e "jsx"
+
+# Comma-separated
+pack -s "import" -e "ts,tsx,jsx"
+
+# Mixed
+pack -s "import" -e "ts,tsx" -e "jsx,js"
+```
+
+## Config Files
+
+Save your search patterns in reusable config files.
+
+### Quick Start with Config Files
+
+```bash
+# Create a config file template (creates pack-config.txt)
+packx init
+
+# Or specify a custom filename
+packx init my-search.txt
+packx init focused-flag.txt
+packx init api-endpoints.config
+
+# Edit the created file
+nano pack-config.txt
+
+# Use the config file
+packx -f pack-config.txt
+```
+
+### Config File Format
+
+The config file uses a simple INI-like format:
+
+```ini
+# Comments start with #
+
+[search]
+useState
+useEffect
+componentDidMount
+
+[extensions]
+ts
+tsx
+jsx
+
+[exclude]
+d.ts
+test.ts
+spec.ts
+```
+
+### Using Config Files
+
+```bash
+# Use config file
+pack -f my-search.txt
+
+# Combine with CLI arguments
+pack -f my-search.txt -s "extraSearch" -o output.xml
+
+# With Repomix options
+pack -f my-search.txt --compress --style markdown
+```
+
+### Example Config Files
+
+**console-logs.txt** - Find all console statements:
+```ini
+[search]
+console.log
+console.error
+console.warn
+console.debug
+
+[extensions]
+js
+ts
+jsx
+tsx
+
+[exclude]
+node_modules
+dist
+build
+```
+
+**api-calls.txt** - Find API and network calls:
+```ini
+[search]
+fetch(
+axios
+$.ajax
+XMLHttpRequest
+/api/
+endpoint
+apiKey
+
+[extensions]
+ts
+tsx
+js
+jsx
+
+[exclude]
+test.
+spec.
+mock.
+```
+
+**react-hooks.txt** - Find React hooks:
+```ini
+[search]
+useState
+useEffect
+useCallback
+useMemo
+useRef
+useContext
+
+[extensions]
+tsx
+jsx
+
+[exclude]
+d.ts
+test.tsx
+__tests__
+```
+
+## CLI Options
+
+### Pack Options
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--strings` | `-s` | Search string (use multiple times) **[required]** |
+| `--extensions` | `-e` | Extensions to include (optional, defaults to common code files) |
+| `--exclude-extensions` | `-x` | Extensions to exclude (multiple or comma-separated) |
+| `--file` | `-f` | Read configuration from file |
+| `--lines` | `-l` | Number of lines around each match (default: entire file) |
+| `--preview` | | Preview matched files without packing |
+| `--help` | `-h` | Show help |
+| `--version` | `-v` | Show version |
+
+### Default Extensions
+
+When no `-e` flag is specified, packx searches these file types:
+
+- **Languages**: js, jsx, ts, tsx, mjs, cjs, py, rb, go, java, cpp, c, h, rs, swift, kt, scala, php
+- **Web Frameworks**: vue, svelte, astro
+- **Styles**: css, scss, less
+- **Config**: json, yaml, yml, toml, xml
+- **Documentation**: md, mdx, txt
+- **Scripts**: sh, bash, zsh, fish
+- **Data**: sql, graphql, gql
+
+### Repomix Pass-through Options
+
+All Repomix options work as normal:
+
+- `--compress` - Compress output
+- `--style <type>` - Output style (xml, markdown, plain)
+- `-o <file>` - Output filename
+- `--remove-comments` - Remove comments from code
+- `--token-count-tree` - Show token counts
+- And many more...
+
+## Build from Source
+
+```bash
+# Clone repository
+git clone https://github.com/johnlindquist/pack.git
+cd pack
+
+# Install dependencies
+bun install
+
+# Build for current platform
+bun run compile
+
+# Build for specific platforms
+bun run compile:macos     # Intel Mac
+bun run compile:macos-arm  # Apple Silicon
+bun run compile:linux      # Linux x64
+bun run compile:linux-arm  # Linux ARM64
+bun run compile:windows    # Windows x64
+
+# Build for all platforms
+bun run compile:all
+```
+
+## Use Cases
+
+### 1. Focused Debugging Context
+
+Extract just the error handling code for AI analysis:
+
+```bash
+packx -s "catch" -s "error" -s "exception" \
+      -l 20 \
+      -o error-handling.md \
+      --style markdown
+```
+
+### 2. Code Review Preparation
+
+Bundle only files containing specific feature flags:
+
+```bash
+packx -s "FEATURE_FLAG_NEW_UI" -s "experimentalFeature" \
+      -e "ts,tsx" \
+      -o feature-review.md \
+      --style markdown
+```
+
+### 3. Security Audit
+
+Find all files with potential security concerns:
+
+```bash
+pack -s "apiKey" -s "secret" -s "password" -s "token" \
+     -e "js,ts,env,json" \
+     -x "test.js,spec.js" \
+     -o security-audit.xml
+```
+
+### 4. Migration Planning
+
+Identify files using deprecated APIs:
+
+```bash
+pack -s "componentWillMount" -s "componentWillReceiveProps" \
+     -e "jsx,tsx" \
+     -o deprecated-apis.md
+```
+
+### 5. Documentation Generation
+
+Extract all files with TODO comments:
+
+```bash
+pack -s "TODO" -s "FIXME" -s "HACK" -s "XXX" \
+     -e "ts,tsx,js,jsx" \
+     --remove-comments false \
+     -o todos.md
+```
+
+## Tips
+
+1. **Use preview mode** (`--preview`) to verify matches before generating output
+2. **Combine config files with CLI args** for maximum flexibility
+3. **Store common patterns** in config files for team sharing
+4. **Use exclude patterns** to skip test and build files
+5. **Special characters** in search strings work perfectly (no escaping needed)
+
+## Troubleshooting
+
+### Command not found
+
+Make sure the bin directory is in your PATH:
+
+```bash
+echo $PATH | grep -q "pack/bin" && echo "✓ In PATH" || echo "✗ Not in PATH"
+```
+
+### No files matched
+
+- Check your search strings are exact (case-sensitive)
+- Verify extensions don't have extra dots (use `ts` not `.ts`)
+- Use `--preview` to debug which files are being checked
+
+### Large repositories
+
+For very large repos, narrow the search scope:
+
+```bash
+# Search only in specific directories
+pack -s "useState" -e "tsx" src/components src/hooks
+```
+
+## Contributing
+
+Pull requests are welcome! Feel free to:
+
+- Add new features
+- Improve documentation
+- Report bugs
+- Suggest enhancements
+
+## License
+
+MIT
+
+## Credits
+
+Built on top of the excellent [Repomix](https://github.com/yamadashy/repomix) by @yamadashy.
+````
+
+## File: src/index.ts
+````typescript
 #!/usr/bin/env node
 /**
  * repomix-filter-pack
@@ -34,7 +1341,6 @@ type Argv = mri.Argv & {
   h?: boolean;
   version?: boolean;
   v?: boolean;
-  'meta-header'?: string;
 };
 
 function printHelp() {
@@ -505,10 +1811,10 @@ function formatContextWindows(windows: ContextWindow[], filePath: string): strin
       output += '\n  ...\n';
     }
     
-    // Add lines with line numbers (no leading whitespace to save tokens)
+    // Add lines with line numbers
     window.lines.forEach((line, index) => {
       const lineNum = window.startLine + index;
-      output += `${lineNum}│ ${line}\n`;
+      output += `${String(lineNum).padStart(6, ' ')}│ ${line}\n`;
     });
   }
   
@@ -735,9 +2041,14 @@ async function createConfigTemplate(filename: string = 'pack-config.ini') {
 async function main() {
   // Check for concept command first
   if (process.argv[2] === 'concept') {
+    const searchString = process.argv.slice(3).join(' ') || '';
+    if (!searchString) {
+      console.error('❌ Please provide a search string for concept mode');
+      console.error('Usage: packx concept <search string>');
+      process.exit(1);
+    }
     const { runConceptMode } = await import('./concept.js');
-    // Pass the raw args after 'concept' for parsing within concept mode
-    await runConceptMode(process.argv.slice(3));
+    await runConceptMode(searchString);
     return; // Let concept mode handle exit
   }
 
@@ -997,48 +2308,6 @@ async function main() {
   const outputFile = parsed.output || parsed.o || "repomix-output.xml";
   const outputStyle = parsed.style || "xml";
   
-  // Build reproducibility metadata header
-  function decodeMetaHeader(b64?: string): any | null {
-    if (!b64) return null;
-    try {
-      const json = Buffer.from(String(b64), 'base64').toString('utf8');
-      return JSON.parse(json);
-    } catch {
-      return null;
-    }
-  }
-  const meta = decodeMetaHeader((parsed as any)['meta-header']);
-  const nowIso = new Date().toISOString();
-  const usedStrings: string[] = [];
-  const stringsArg = (parsed.strings || parsed.s) as any;
-  if (Array.isArray(stringsArg)) usedStrings.push(...stringsArg.map(String));
-  else if (typeof stringsArg === 'string') usedStrings.push(stringsArg);
-  const includedExt = (parsed.extensions || parsed.e) as string | undefined;
-  const excludedExt = (parsed['exclude-extensions'] || parsed.x) as string | undefined;
-  const linesUsed = parsed.lines || parsed.l || 0;
-  const styleUsed = outputStyle;
-  const argvArgs = process.argv.slice(2);
-  const commandRun = `packx ${argvArgs.map(a => /\s/.test(a) ? `'${a.replace(/'/g, "'\\''")}'` : a).join(' ')}`;
-  const repro = {
-    timestamp: nowIso,
-    cwd,
-    strings: usedStrings,
-    extensions: includedExt || '',
-    excludes: excludedExt || '',
-    lines: linesUsed,
-    style: styleUsed,
-    output: outputFile,
-    command: meta?.exact_command || commandRun,
-    concept: meta?.mode === 'concept' ? {
-      query: meta?.concept_query,
-      seed_terms: meta?.seed_terms || [],
-      keywords_used: meta?.keywords_used || usedStrings,
-      inferred_extensions: meta?.inferred_extensions || [],
-      tuned: meta?.tuned || null,
-      max_tokens: meta?.tuned?.max_tokens || undefined
-    } : null
-  };
-  
   // Read and combine the files
   let output = '';
   let totalMatchCount = 0;
@@ -1046,8 +2315,6 @@ async function main() {
   const fileSizes: { path: string; size: number; tokens: number }[] = [];
   
   if (outputStyle === "xml") {
-    // XML header with reproducibility metadata
-    const conceptXml = repro.concept ? `\n  <concept>\n    <query>${repro.concept.query}</query>\n    <seed_terms>${(repro.concept.seed_terms||[]).join(', ')}</seed_terms>\n    <keywords>${(repro.concept.keywords_used||[]).join(', ')}</keywords>\n    <inferred_extensions>${(repro.concept.inferred_extensions||[]).join(', ')}</inferred_extensions>\n    <max_tokens>${repro.concept.max_tokens ?? ''}</max_tokens>\n  </concept>` : '';
     output = `This file is a merged representation of the filtered codebase, combined into a single document by packx.
 
 <file_summary>
@@ -1068,18 +2335,6 @@ or other automated processes.
 - Files were filtered by packx based on content and extension matching
 - Total files included: ${matched.length}${contextLines ? `\n- Context lines: ${contextLines} lines around each match` : ''}
 </notes>
-
-<repro>
-  <timestamp>${repro.timestamp}</timestamp>
-  <cwd>${repro.cwd}</cwd>
-  <strings>${repro.strings.join(', ')}</strings>
-  <extensions>${repro.extensions}</extensions>
-  <excludes>${repro.excludes}</excludes>
-  <lines>${repro.lines}</lines>
-  <style>${repro.style}</style>
-  <output>${repro.output}</output>
-  <command>${repro.command}</command>${conceptXml}
-</repro>
 </file_summary>
 
 <directory_structure>
@@ -1135,22 +2390,10 @@ ${content}
     
     output += `</files>`;
   } else {
-    // Markdown format with reproducibility header
-    const conceptBlock = repro.concept ? `\n- Concept Query: ${repro.concept.query}\n- Seed Terms: ${repro.concept.seed_terms.join(', ')}\n- Keywords Used: ${repro.concept.keywords_used.join(', ')}\n- Inferred Extensions: ${repro.concept.inferred_extensions.join(', ')}\n- Max Tokens: ${repro.concept.max_tokens ?? ''}` : '';
-    output = `# Packx Bundle
+    // Markdown format
+    output = `# Packx Output
 
-This artifact was generated by Packx. Use the metadata below to reproduce it exactly.
-
-## Reproducibility
-- Timestamp: ${repro.timestamp}
-- CWD: ${repro.cwd}
-- Strings: ${repro.strings.join(', ')}
-- Extensions: ${repro.extensions}
-- Excludes: ${repro.excludes}
-- Lines: ${repro.lines}
-- Style: ${repro.style}
-- Output: ${repro.output}
-- Command: ${repro.command}${conceptBlock}
+This file contains ${matched.length} filtered files from the repository.${contextLines ? `\n\n**Context:** ${contextLines} lines around each match` : ''}
 
 ## Files
 
@@ -1258,22 +2501,22 @@ ${content}
   
   console.log(`\n📊 Pack Summary:`);
   console.log(`────────────────`);
-  console.log(`Total Files: ${matched.length} files`);
+  console.log(`  Total Files: ${matched.length} files`);
   if (contextLines) {
-    console.log(`Context Lines: ${contextLines} around each match`);
-    console.log(`Total Matches: ${totalMatchCount} matches`);
-    console.log(`Context Windows: ${totalWindowCount} windows`);
+    console.log(`  Context Lines: ${contextLines} around each match`);
+    console.log(`  Total Matches: ${totalMatchCount} matches`);
+    console.log(`  Context Windows: ${totalWindowCount} windows`);
   }
-  console.log(`Total Tokens: ~${totalTokens.toLocaleString()} tokens`);
-  console.log(`Total Chars: ${totalChars.toLocaleString()} chars`);
-  console.log(`Output: ${outputFile}`);
+  console.log(`  Total Tokens: ~${totalTokens.toLocaleString()} tokens`);
+  console.log(`  Total Chars: ${totalChars.toLocaleString()} chars`);
+  console.log(`       Output: ${outputFile}`);
   
   // Show found extensions
   if (foundExtensions.size > 0) {
     const sortedExtensions = Array.from(foundExtensions).sort();
     console.log(`\n📁 Extensions Found:`);
     console.log(`────────────────────`);
-    console.log(`${sortedExtensions.join(', ')}`);
+    console.log(`  ${sortedExtensions.join(', ')}`);
   }
   
   // Show top files by size
@@ -1288,7 +2531,7 @@ ${content}
       const fileName = path.basename(file.path);
       const dirName = path.dirname(file.path);
       const shortPath = dirName === '.' ? fileName : `${dirName}/${fileName}`;
-      console.log(`${file.tokens.toLocaleString()} tokens - ${shortPath}`);
+      console.log(`  ${file.tokens.toLocaleString().padStart(8)} tokens - ${shortPath}`);
     }
   }
 }
@@ -1297,3 +2540,69 @@ main().catch((err) => {
   console.error("Unexpected error:", err);
   process.exit(99);
 });
+````
+
+## File: package.json
+````json
+{
+  "name": "packx",
+  "version": "3.0.0",
+  "description": "Smart file filter for Repomix - search and bundle only files containing specific strings",
+  "license": "MIT",
+  "type": "module",
+  "author": "John Lindquist",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johnlindquist/pack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/johnlindquist/pack/issues"
+  },
+  "homepage": "https://github.com/johnlindquist/pack#readme",
+  "keywords": [
+    "repomix",
+    "filter",
+    "search",
+    "bundle",
+    "pack",
+    "ai",
+    "llm",
+    "code"
+  ],
+  "bin": {
+    "packx": "dist/index.js",
+    "pack": "dist/index.js"
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir dist --target node --format esm",
+    "dev": "bun run ./src/index.ts --help",
+    "dev:concept": "bun run ./src/index.ts concept",
+    "prepublishOnly": "npm run build && npm run update-version-in-code",
+    "update-version-in-code": "node scripts/update-version.js",
+    "release:patch": "npm version patch && npm publish && git push && git push --tags",
+    "release:minor": "npm version minor && npm publish && git push && git push --tags",
+    "release:major": "npm version major && npm publish && git push && git push --tags",
+    "compile": "bun build ./src/index.ts --compile --outfile bin/pack",
+    "compile:all": "npm run compile:macos && npm run compile:linux && npm run compile:windows",
+    "compile:macos": "bun build ./src/index.ts --compile --target bun-darwin-x64 --outfile bin/pack-macos-x64",
+    "compile:macos-arm": "bun build ./src/index.ts --compile --target bun-darwin-arm64 --outfile bin/pack-macos-arm64",
+    "compile:linux": "bun build ./src/index.ts --compile --target bun-linux-x64 --outfile bin/pack-linux-x64",
+    "compile:linux-arm": "bun build ./src/index.ts --compile --target bun-linux-arm64 --outfile bin/pack-linux-arm64",
+    "compile:windows": "bun build ./src/index.ts --compile --target bun-windows-x64 --outfile bin/pack-windows-x64.exe"
+  },
+  "dependencies": {
+    "glob": "^10.3.10",
+    "minisearch": "^7.1.2",
+    "mri": "^1.2.0",
+    "repomix": "^1.2.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
+````
