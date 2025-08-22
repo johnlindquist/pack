@@ -275,6 +275,8 @@ Use `--stdout` to write the packed content to stdout (useful for piping). Summar
 
 ```bash
 packx -s "error" -l 2 --style markdown --stdout | tee errors.md
+
+Note: By default, Packx now runs in summary-only mode and does not write content to a file. Use `-o <file>` to write to a file or `--stdout` to stream content.
 ```
 ```
 

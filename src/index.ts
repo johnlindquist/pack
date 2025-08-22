@@ -773,7 +773,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.0.3");
+    console.log("packx v3.0.4");
     process.exit(0);
   }
 
@@ -1039,7 +1039,8 @@ async function main() {
   if (rawOutputArg === '-' || (parsed.o === true && (parsed._ || []).includes('-'))) {
     toStdout = true;
   }
-  const outputFile = typeof rawOutputArg === 'string' ? rawOutputArg : "repomix-output.xml";
+  const outputFile = typeof rawOutputArg === 'string' ? rawOutputArg : undefined;
+  const summaryOnly = !toStdout && !outputFile;
   const outputStyle = parsed.style || "xml";
   const log = (msg: string) => (toStdout ? console.error(msg) : console.log(msg));
 
@@ -1052,21 +1053,25 @@ async function main() {
   if (contextLines) {
     log(`📝 Extracting ${contextLines} lines of context around matches...`);
   } else {
-    log(`📝 Files to pack:`);
+    log(`📝 Files selected:`);
     relativePaths.forEach(p => log(`  • ${p}`));
+    if (!toStdout && !outputFile) {
+      log(`(Summary only. Use -o <file> or --stdout to write content)`);
+    }
   }
 
   // Since Repomix's stdin and include features are broken, 
   // we'll directly create the output ourselves
   
-  // Read and combine the files
+  // Read and (optionally) combine the files
   let output = '';
   let totalMatchCount = 0;
   let totalWindowCount = 0;
   const fileSizes: { path: string; size: number; tokens: number }[] = [];
   
   if (outputStyle === "xml") {
-    output = `This file is a merged representation of the filtered codebase, combined into a single document by packx.
+    if (!summaryOnly) {
+      output = `This file is a merged representation of the filtered codebase, combined into a single document by packx.
 
 <file_summary>
 This section contains a summary of this file.
@@ -1096,6 +1101,7 @@ ${relativePaths.join('\n')}
 This section contains the contents of the repository's files.
 
 `;
+    }
     
     for (const [index, filePath] of matched.entries()) {
       const relPath = relativePaths[index];
@@ -1128,7 +1134,7 @@ ${content}
         }
         
         if (fileOutput) {
-          output += fileOutput;
+          if (!summaryOnly) output += fileOutput;
           // Track file size for summary
           const fileSize = fileOutput.length;
           const fileTokens = Math.round(fileSize / 4);
@@ -1138,17 +1144,20 @@ ${content}
         console.error(`Warning: Could not read file ${relPath}: ${err}`);
       }
     }
-    
-    output += `</files>`;
+    if (!summaryOnly) {
+      output += `</files>`;
+    }
   } else {
     // Markdown format
-    output = `# Packx Output
+    if (!summaryOnly) {
+      output = `# Packx Output
 
 This file contains ${matched.length} filtered files from the repository.${contextLines ? `\n\n**Context:** ${contextLines} lines around each match` : ''}
 
 ## Files
 
 `;
+    }
     
     for (const [index, filePath] of matched.entries()) {
       const relPath = relativePaths[index];
@@ -1185,7 +1194,7 @@ ${content}
         }
         
         if (fileOutput) {
-          output += fileOutput;
+          if (!summaryOnly) output += fileOutput;
           // Track file size for summary
           const fileSize = fileOutput.length;
           const fileTokens = Math.round(fileSize / 4);
@@ -1197,10 +1206,10 @@ ${content}
     }
   }
   
-  // Write the output (file or stdout)
+  // Write the output (file or stdout). Default is summary-only (no content output)
   if (toStdout) {
     process.stdout.write(output);
-  } else {
+  } else if (outputFile) {
     await fs.writeFile(outputFile, output, 'utf8');
     console.log(`\n✅ Successfully packed ${matched.length} file(s) to ${outputFile}`);
   }
@@ -1250,7 +1259,9 @@ ${content}
   }
   
   // Calculate some stats
-  const totalChars = output.length;
+  const totalChars = (!toStdout && !outputFile && fileSizes.length)
+    ? fileSizes.reduce((sum, f) => sum + f.size, 0)
+    : output.length;
   const totalTokens = Math.round(totalChars / 4); // Rough estimate
   
   // Reuse existing log() for summary output
@@ -1264,7 +1275,7 @@ ${content}
   }
   log(`  Total Tokens: ~${totalTokens.toLocaleString()} tokens`);
   log(`  Total Chars: ${totalChars.toLocaleString()} chars`);
-  log(`       Output: ${toStdout ? '-' : outputFile}`);
+  log(`       Output: ${toStdout ? '-' : (outputFile ?? 'none')}`);
   
   // Show found extensions
   if (foundExtensions.size > 0) {
