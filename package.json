@@ -1,6 +1,6 @@
 {
   "name": "packx",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "Smart file filter for Repomix - search and bundle only files containing specific strings",
   "license": "MIT",
   "type": "module",
