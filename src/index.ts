@@ -13,6 +13,7 @@ import mri from "mri";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { glob } from "glob";
+import { Minimatch } from "minimatch";
 
 type Argv = mri.Argv & {
   strings?: string | string[];
@@ -507,7 +508,7 @@ function formatContextWindows(windows: ContextWindow[], filePath: string): strin
   return output;
 }
 
-async function fileContainsAnyStrings(absPath: string, pattern: RegExp, excludePattern?: RegExp | null): Promise<boolean> {
+async function fileContainsAnyStrings(absPath: string, pattern?: RegExp | null, excludePattern?: RegExp | null): Promise<boolean> {
   try {
     const stat = await fs.stat(absPath);
     // Skip extremely large files (> 10MB) as a guard (Repomix ignores most binaries anyway)
@@ -520,8 +521,8 @@ async function fileContainsAnyStrings(absPath: string, pattern: RegExp, excludeP
       return false;
     }
     
-    // Then check if file contains required strings
-    return pattern.test(buf);
+    // Then check if file contains required strings (if provided)
+    return pattern ? pattern.test(buf) : true;
   } catch {
     return false;
   }
@@ -537,6 +538,9 @@ function buildRepomixPassthroughArgs(parsed: Argv): string[] {
     "exclude-extensions",
     "file",
     "lines",
+    "include",
+    "ignore",
+    "i",
     "case-sensitive",
     "s",
     "S",
@@ -545,6 +549,7 @@ function buildRepomixPassthroughArgs(parsed: Argv): string[] {
     "f",
     "l",
     "C",
+    "stdout",
     "preview",
     "help",
     "h",
@@ -751,8 +756,16 @@ async function main() {
       h: "help",
       v: "version"
     },
-    string: ["strings", "s", "exclude-strings", "S", "extensions", "e", "exclude-extensions", "x", "file", "f"],
-    boolean: ["case-sensitive", "C", "preview", "help", "h", "version", "v"]
+    string: [
+      "strings", "s",
+      "exclude-strings", "S",
+      "extensions", "e",
+      "exclude-extensions", "x",
+      "file", "f",
+      "include",
+      "ignore", "i"
+    ],
+    boolean: ["case-sensitive", "C", "preview", "help", "h", "version", "v", "stdout"]
   }) as Argv;
 
   if (parsed.help || parsed.h) {
@@ -760,7 +773,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.0.1");
+    console.log("packx v3.0.2");
     process.exit(0);
   }
 
@@ -769,6 +782,18 @@ async function main() {
   let extensions: Set<string>;
   let excludePatterns: string[] = [];
   const caseSensitive = parsed["case-sensitive"] || parsed.C || false;
+  
+  // Repomix-style include/ignore patterns (post-filtered via Minimatch on relative paths)
+  function toArray(val: any): string[] {
+    if (!val) return [];
+    return Array.isArray(val) ? val.map(String) : [String(val)];
+  }
+  const includeRaw = toArray((parsed as any).include);
+  const includeList = includeRaw.flatMap(v => parseCSV(v));
+  const ignoreRaw = toArray((parsed as any).ignore || (parsed as any).i);
+  const ignoreList = ignoreRaw.flatMap(v => parseCSV(v));
+  const includeMatchers = includeList.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive }));
+  const ignoreMatchers = ignoreList.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive }));
 
   // Check if config file is provided
   const configFile = parsed.file || parsed.f;
@@ -916,7 +941,7 @@ async function main() {
       });
       
       for (const file of files) {
-        // All filtering is now done via glob ignore patterns
+        // Accumulate; include/ignore filtering applied after discovery
         candidates.add(file);
       }
     }
@@ -927,13 +952,22 @@ async function main() {
     process.exit(2);
   }
 
+  // Apply include/ignore matchers on repo-relative paths
+  const filteredCandidates: string[] = [];
+  for (const p of candidates) {
+    const rel = path.relative(process.cwd(), p).replace(/\\/g, '/');
+    if (includeMatchers.length && !includeMatchers.some(mm => mm.match(rel))) continue;
+    if (ignoreMatchers.length && ignoreMatchers.some(mm => mm.match(rel))) continue;
+    filteredCandidates.push(p);
+  }
+
   // 2) Content filter (or pass-through if no strings)
   const matched: string[] = [];
   const foundExtensions = new Set<string>();
   
   if (!pattern) {
     // No include strings: include all candidates unless they match exclude strings
-    for (const p of candidates) {
+    for (const p of filteredCandidates) {
       if (excludePattern) {
         try {
           const stat = await fs.stat(p);
@@ -948,7 +982,7 @@ async function main() {
       if (ext) foundExtensions.add(ext);
     }
   } else {
-    for (const p of candidates) {
+    for (const p of filteredCandidates) {
       if (await fileContainsAnyStrings(p, pattern, excludePattern)) {
         const resolvedPath = path.resolve(p);
         matched.push(resolvedPath);
@@ -1049,7 +1083,7 @@ This section contains the contents of the repository's files.
         let fileOutput = '';
         if (contextLines) {
           // Extract context windows
-          const windows = extractContextWindows(content, pattern, contextLines);
+          const windows = extractContextWindows(content, pattern!, contextLines);
           if (windows.length > 0) {
             totalWindowCount += windows.length;
             totalMatchCount += windows.reduce((sum, w) => sum + w.matches.length, 0);
@@ -1103,7 +1137,7 @@ This file contains ${matched.length} filtered files from the repository.${contex
         let fileOutput = '';
         if (contextLines) {
           // Extract context windows
-          const windows = extractContextWindows(content, pattern, contextLines);
+          const windows = extractContextWindows(content, pattern!, contextLines);
           if (windows.length > 0) {
             totalWindowCount += windows.length;
             totalMatchCount += windows.reduce((sum, w) => sum + w.matches.length, 0);

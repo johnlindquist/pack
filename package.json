@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "glob": "^10.3.10",
+    "minimatch": "^9.0.3",
     "mri": "^1.2.0",
     "repomix": "^1.2.1"
   },
