@@ -773,7 +773,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.0.2");
+    console.log("packx v3.0.3");
     process.exit(0);
   }
 
@@ -792,8 +792,30 @@ async function main() {
   const includeList = includeRaw.flatMap(v => parseCSV(v));
   const ignoreRaw = toArray((parsed as any).ignore || (parsed as any).i);
   const ignoreList = ignoreRaw.flatMap(v => parseCSV(v));
-  const includeMatchers = includeList.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive }));
-  const ignoreMatchers = ignoreList.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive }));
+
+  function hasGlobChars(s: string): boolean {
+    return /[\*\?\[\]\{\}!]/.test(s);
+  }
+  function expandPattern(p: string, forInclude = true): string[] {
+    // If pattern already has glob characters or path separators with glob, keep as-is
+    if (hasGlobChars(p)) return [p];
+    const norm = p.replace(/^[./]+/, '');
+    const patterns: string[] = [];
+    // exact relative path (file at root)
+    patterns.push(norm);
+    // any file named p anywhere
+    patterns.push(`**/${norm}`);
+    // any path under a directory named p at root
+    patterns.push(`${norm}/**`);
+    // any path under a directory named p anywhere
+    patterns.push(`**/${norm}/**`);
+    return Array.from(new Set(patterns));
+  }
+
+  const includeExpanded = includeList.flatMap(p => expandPattern(p, true));
+  const ignoreExpanded = ignoreList.flatMap(p => expandPattern(p, false));
+  const includeMatchers = includeExpanded.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
+  const ignoreMatchers = ignoreExpanded.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
 
   // Check if config file is provided
   const configFile = parsed.file || parsed.f;
