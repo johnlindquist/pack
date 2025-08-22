@@ -281,7 +281,7 @@ USAGE
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 PACKX OPTIONS
-  -s, --strings STRING        Search string (use multiple times) [required]
+  -s, --strings STRING        Search string (use multiple times)
   -S, --exclude-strings       Exclude files containing these strings
   -e, --extensions EXTS       Include only these extensions (comma-separated)
   -x, --exclude-extensions    Exclude these patterns (matched from end)
@@ -869,17 +869,14 @@ async function main() {
     ]);
   }
 
-  if (!strings.length) {
-    console.error("❌ At least one search string is required.");
-    console.error("   Example: packx -s 'foo' -s 'bar'");
-    console.error("   Or use a config file: packx init my-search.txt");
-    process.exit(1);
-  }
+  // If no search strings are provided, behave like a repomix wrapper: select by extensions only
 
   const roots = parsed._.length ? parsed._ : ["."];
   const regexFlags = caseSensitive ? "" : "i";
-  const pattern = new RegExp(strings.map(escRegex).join("|"), regexFlags);
-  const excludePattern = excludeStrings.length > 0 
+  const pattern: RegExp | null = strings.length > 0
+    ? new RegExp(strings.map(escRegex).join("|"), regexFlags)
+    : null;
+  const excludePattern: RegExp | null = excludeStrings.length > 0 
     ? new RegExp(excludeStrings.map(escRegex).join("|"), regexFlags)
     : null;
 
@@ -930,19 +927,35 @@ async function main() {
     process.exit(2);
   }
 
-  // 2) Content filter
+  // 2) Content filter (or pass-through if no strings)
   const matched: string[] = [];
   const foundExtensions = new Set<string>();
   
-  for (const p of candidates) {
-    if (await fileContainsAnyStrings(p, pattern, excludePattern)) {
+  if (!pattern) {
+    // No include strings: include all candidates unless they match exclude strings
+    for (const p of candidates) {
+      if (excludePattern) {
+        try {
+          const stat = await fs.stat(p);
+          if (stat.size > 10 * 1024 * 1024) continue; // safety: skip huge files
+          const buf = await fs.readFile(p, 'utf8');
+          if (excludePattern.test(buf)) continue;
+        } catch { continue; }
+      }
       const resolvedPath = path.resolve(p);
       matched.push(resolvedPath);
-      
-      // Track the extension
       const ext = path.extname(resolvedPath).toLowerCase();
-      if (ext) {
-        foundExtensions.add(ext);
+      if (ext) foundExtensions.add(ext);
+    }
+  } else {
+    for (const p of candidates) {
+      if (await fileContainsAnyStrings(p, pattern, excludePattern)) {
+        const resolvedPath = path.resolve(p);
+        matched.push(resolvedPath);
+        const ext = path.extname(resolvedPath).toLowerCase();
+        if (ext) {
+          foundExtensions.add(ext);
+        }
       }
     }
   }
@@ -976,8 +989,9 @@ async function main() {
 
   log(`🧩 Packing ${matched.length} file(s)...`);
   
-  // Get context lines if specified
-  const contextLines = parsed.lines || parsed.l;
+  // Get context lines: if no search strings, ignore -l and pack full files
+  const hasSearchStrings = strings.length > 0;
+  const contextLines = hasSearchStrings ? (parsed.lines || parsed.l) : undefined;
   
   if (contextLines) {
     log(`📝 Extracting ${contextLines} lines of context around matches...`);
