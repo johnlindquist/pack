@@ -760,7 +760,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v2.2.0");
+    console.log("packx v3.0.1");
     process.exit(0);
   }
 
@@ -963,23 +963,31 @@ async function main() {
   // Convert matched files to relative paths
   const cwd = process.cwd();
   const relativePaths = matched.map(p => path.relative(cwd, p));
-  
-  console.log(`🧩 Packing ${matched.length} file(s)...`);
+
+  // Determine output early to route logs when writing to stdout
+  const rawOutputArg = (parsed.output ?? parsed.o) as any;
+  let toStdout = Boolean((parsed as any).stdout);
+  if (rawOutputArg === '-' || (parsed.o === true && (parsed._ || []).includes('-'))) {
+    toStdout = true;
+  }
+  const outputFile = typeof rawOutputArg === 'string' ? rawOutputArg : "repomix-output.xml";
+  const outputStyle = parsed.style || "xml";
+  const log = (msg: string) => (toStdout ? console.error(msg) : console.log(msg));
+
+  log(`🧩 Packing ${matched.length} file(s)...`);
   
   // Get context lines if specified
   const contextLines = parsed.lines || parsed.l;
   
   if (contextLines) {
-    console.log(`📝 Extracting ${contextLines} lines of context around matches...`);
+    log(`📝 Extracting ${contextLines} lines of context around matches...`);
   } else {
-    console.log(`📝 Files to pack:`);
-    relativePaths.forEach(p => console.log(`  • ${p}`));
+    log(`📝 Files to pack:`);
+    relativePaths.forEach(p => log(`  • ${p}`));
   }
 
   // Since Repomix's stdin and include features are broken, 
   // we'll directly create the output ourselves
-  const outputFile = parsed.output || parsed.o || "repomix-output.xml";
-  const outputStyle = parsed.style || "xml";
   
   // Read and combine the files
   let output = '';
@@ -1120,7 +1128,6 @@ ${content}
   }
   
   // Write the output (file or stdout)
-  const toStdout = outputFile === '-' || Boolean((parsed as any).stdout);
   if (toStdout) {
     process.stdout.write(output);
   } else {
@@ -1176,7 +1183,7 @@ ${content}
   const totalChars = output.length;
   const totalTokens = Math.round(totalChars / 4); // Rough estimate
   
-  const log = (msg: string) => (toStdout ? console.error(msg) : console.log(msg));
+  // Reuse existing log() for summary output
   log(`\n📊 Pack Summary:`);
   log(`────────────────`);
   log(`  Total Files: ${matched.length} files`);

@@ -271,10 +271,10 @@ pack -f my-search.txt --compress --style markdown
 
 ### Output to stdout
 
-Use `-o -` (dash) to write the packed content to stdout (useful for piping). Summaries are written to stderr:
+Use `--stdout` to write the packed content to stdout (useful for piping). Summaries are written to stderr:
 
 ```bash
-packx -s "error" -l 2 --style markdown -o - | tee errors.md
+packx -s "error" -l 2 --style markdown --stdout | tee errors.md
 ```
 ```
 
