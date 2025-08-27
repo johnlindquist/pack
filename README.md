@@ -112,13 +112,13 @@ source ~/.zshrc
 
 ```bash
 # Create a search config
-packx init my-search.txt
+packx init my-search
 
 # Edit it with your patterns
-nano my-search.txt
+nano my-search.ini
 
 # Run the search
-packx -f my-search.txt -o results.md
+packx -f my-search.ini -o results.md
 ```
 
 ### Basic Usage
@@ -219,19 +219,19 @@ Save your search patterns in reusable config files.
 ### Quick Start with Config Files
 
 ```bash
-# Create a config file template (creates pack-config.txt)
+# Create a config file template (creates pack-config.ini)
 packx init
 
 # Or specify a custom filename
-packx init my-search.txt
-packx init focused-flag.txt
+packx init my-search
+packx init focused-flag
 packx init api-endpoints.config
 
 # Edit the created file
-nano pack-config.txt
+nano pack-config.ini
 
 # Use the config file
-packx -f pack-config.txt
+packx -f pack-config.ini
 ```
 
 ### Config File Format
@@ -261,13 +261,13 @@ spec.ts
 
 ```bash
 # Use config file
-pack -f my-search.txt
+pack -f my-search.ini
 
 # Combine with CLI arguments
-pack -f my-search.txt -s "extraSearch" -o output.xml
+pack -f my-search.ini -s "extraSearch" -o output.xml
 
 # With Repomix options
-pack -f my-search.txt --compress --style markdown
+pack -f my-search.ini --compress --style markdown
 
 ### Output to stdout
 
@@ -278,11 +278,25 @@ packx -s "error" -l 2 --style markdown --stdout | tee errors.md
 
 Note: By default, Packx now runs in summary-only mode and does not write content to a file. Use `-o <file>` to write to a file or `--stdout` to stream content.
 ```
+
+### Path Globs and Files
+
+You can pass directories, files, or globs as positional args. Globs restrict the search scope and work with or without `-e`:
+
+```bash
+# Only shell scripts in scripts/
+packx scripts/*.sh --preview
+
+# All Markdown anywhere
+packx "**/*.md" -s "TODO" --style markdown
+
+# Single file
+packx README.md -s "Features"
 ```
 
 ### Example Config Files
 
-**console-logs.txt** - Find all console statements:
+**console-logs.ini** - Find all console statements:
 ```ini
 [search]
 console.log
@@ -302,7 +316,7 @@ dist
 build
 ```
 
-**api-calls.txt** - Find API and network calls:
+**api-calls.ini** - Find API and network calls:
 ```ini
 [search]
 fetch(
@@ -325,7 +339,7 @@ spec.
 mock.
 ```
 
-**react-hooks.txt** - Find React hooks:
+**react-hooks.ini** - Find React hooks:
 ```ini
 [search]
 useState
@@ -351,12 +365,15 @@ __tests__
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--strings` | `-s` | Search string (use multiple times) **[required]** |
+| `--strings` | `-s` | Search string (use multiple times) |
+| `--exclude-strings` | `-S` | Exclude files containing these strings |
 | `--extensions` | `-e` | Extensions to include (optional, defaults to common code files) |
 | `--exclude-extensions` | `-x` | Extensions to exclude (multiple or comma-separated) |
 | `--file` | `-f` | Read configuration from file |
 | `--lines` | `-l` | Number of lines around each match (default: entire file) |
+| `--case-sensitive` | `-C` | Make search case-sensitive (default: off) |
 | `--preview` | | Preview matched files without packing |
+| `--copy` | `-c` | Copy output to clipboard |
 | `--help` | `-h` | Show help |
 | `--version` | `-v` | Show version |
 
@@ -381,6 +398,7 @@ All Repomix options work as normal:
 - `-o <file>` - Output filename
 - `--remove-comments` - Remove comments from code
 - `--token-count-tree` - Show token counts
+- `--instruction-file-path <file>` - Custom instructions file
 - And many more...
 
 ## Build from Source
@@ -459,7 +477,7 @@ Extract all files with TODO comments:
 ```bash
 pack -s "TODO" -s "FIXME" -s "HACK" -s "XXX" \
      -e "ts,tsx,js,jsx" \
-     --remove-comments false \
+     --remove-comments \
      -o todos.md
 ```
 
@@ -483,7 +501,7 @@ echo $PATH | grep -q "pack/bin" && echo "✓ In PATH" || echo "✗ Not in PATH"
 
 ### No files matched
 
-- Check your search strings are exact (case-sensitive)
+- Use `-C` for case-sensitive matches when needed
 - Verify extensions don't have extra dots (use `ts` not `.ts`)
 - Use `--preview` to debug which files are being checked
 

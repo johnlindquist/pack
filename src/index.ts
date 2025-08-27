@@ -773,7 +773,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.0.4");
+    console.log("packx v3.0.5");
     process.exit(0);
   }
 
@@ -812,7 +812,37 @@ async function main() {
     return Array.from(new Set(patterns));
   }
 
-  const includeExpanded = includeList.flatMap(p => expandPattern(p, true));
+  // Classify positional args into roots, files, and globs
+  const positionalArgs: string[] = (parsed._ as any[] || []).map(String);
+  const positionalRoots: string[] = [];
+  const positionalFileIncludes: string[] = [];
+  const positionalGlobIncludes: string[] = [];
+  for (const arg of positionalArgs) {
+    if (!arg) continue;
+    if (hasGlobChars(arg)) {
+      positionalGlobIncludes.push(arg);
+      continue;
+    }
+    try {
+      const st = await fs.stat(arg);
+      if (st.isDirectory()) positionalRoots.push(arg);
+      else if (st.isFile()) positionalFileIncludes.push(path.resolve(arg));
+      else positionalGlobIncludes.push(arg);
+    } catch {
+      positionalGlobIncludes.push(arg);
+    }
+  }
+
+  // Combine CLI includes with positional globs and explicit files (as relative patterns)
+  const positionalFilePatterns = positionalFileIncludes
+    .map((abs) => path.relative(process.cwd(), abs).replace(/\\/g, '/'));
+  const combinedIncludeList = [
+    ...includeList,
+    ...positionalGlobIncludes,
+    ...positionalFilePatterns,
+  ];
+
+  const includeExpanded = combinedIncludeList.flatMap(p => expandPattern(p, true));
   const ignoreExpanded = ignoreList.flatMap(p => expandPattern(p, false));
   const includeMatchers = includeExpanded.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
   const ignoreMatchers = ignoreExpanded.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
@@ -918,7 +948,7 @@ async function main() {
 
   // If no search strings are provided, behave like a repomix wrapper: select by extensions only
 
-  const roots = parsed._.length ? parsed._ : ["."];
+  const roots = positionalRoots.length ? positionalRoots : ["."];
   const regexFlags = caseSensitive ? "" : "i";
   const pattern: RegExp | null = strings.length > 0
     ? new RegExp(strings.map(escRegex).join("|"), regexFlags)
@@ -959,7 +989,8 @@ async function main() {
           ...excludePatterns  // Add user-defined exclude patterns
         ],
         absolute: true,
-        dot: false
+        dot: false,
+        nodir: true
       });
       
       for (const file of files) {
@@ -967,7 +998,43 @@ async function main() {
         candidates.add(file);
       }
     }
+
+    // Also discover by include patterns (positional or --include)
+    if (includeExpanded.length > 0) {
+      for (const inc of includeExpanded) {
+        try {
+          const isAbs = path.isAbsolute(inc);
+          const files = await glob(inc, {
+            cwd: isAbs ? undefined : absRoot,
+            ignore: [
+              '**/node_modules/**',
+              '**/.git/**',
+              '**/dist/**',
+              '**/build/**',
+              '**/.next/**',
+              '**/coverage/**',
+              '**/.cache/**',
+              '**/tmp/**',
+              '**/temp/**',
+              '**/*.log',
+              '**/.DS_Store',
+              '**/Thumbs.db',
+              ...excludePatterns
+            ],
+            absolute: true,
+            dot: false,
+            nodir: true,
+          });
+          for (const f of files) candidates.add(f);
+        } catch {
+          // ignore invalid patterns
+        }
+      }
+    }
   }
+
+  // Include explicit file paths provided positionally
+  for (const f of positionalFileIncludes) candidates.add(f);
 
   if (!candidates.size) {
     console.warn("⚠️  No files found with the specified extensions in the given roots.");

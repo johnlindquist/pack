@@ -30,7 +30,7 @@
   "scripts": {
     "build": "bun build ./src/index.ts --outdir dist --target node --format esm",
     "dev": "bun run ./src/index.ts --help",
-    "prepublishOnly": "npm run build && npm run update-version-in-code",
+    "prepublishOnly": "npm run update-version-in-code && npm run build",
     "update-version-in-code": "node scripts/update-version.js",
     "release:patch": "npm version patch && npm publish && git push && git push --tags",
     "release:minor": "npm version minor && npm publish && git push && git push --tags",
