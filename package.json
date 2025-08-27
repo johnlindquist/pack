@@ -13,6 +13,10 @@
     "url": "https://github.com/johnlindquist/pack/issues"
   },
   "homepage": "https://github.com/johnlindquist/pack#readme",
+  "files": [
+    "dist/**",
+    "README.md"
+  ],
   "keywords": [
     "repomix",
     "filter",
