@@ -773,7 +773,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.0.6");
+    console.log("packx v3.0.7");
     process.exit(0);
   }
 
@@ -1018,8 +1018,7 @@ async function main() {
               '**/temp/**',
               '**/*.log',
               '**/.DS_Store',
-              '**/Thumbs.db',
-              ...excludePatterns
+              '**/Thumbs.db'
             ],
             absolute: true,
             dot: false,

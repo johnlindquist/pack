@@ -294,6 +294,8 @@ packx "**/*.md" -s "TODO" --style markdown
 packx README.md -s "Features"
 ```
 
+Note: Explicit include globs/files override `-x` excludes for those matches (e.g., `packx "**/*.ini" -x ini` still includes the `.ini` files you asked for).
+
 ### Example Config Files
 
 **console-logs.ini** - Find all console statements:
