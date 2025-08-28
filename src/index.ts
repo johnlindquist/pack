@@ -30,6 +30,8 @@ type Argv = mri.Argv & {
   l?: number;
   "case-sensitive"?: boolean;
   C?: boolean;
+  copy?: boolean;
+  c?: boolean;
   preview?: boolean;
   help?: boolean;
   h?: boolean;
@@ -542,6 +544,8 @@ function buildRepomixPassthroughArgs(parsed: Argv): string[] {
     "ignore",
     "i",
     "case-sensitive",
+    "copy",
+    "c",
     "s",
     "S",
     "e",
@@ -753,6 +757,7 @@ async function main() {
       f: "file",
       l: "lines",
       C: "case-sensitive",
+      c: "copy",
       h: "help",
       v: "version"
     },
@@ -765,7 +770,7 @@ async function main() {
       "include",
       "ignore", "i"
     ],
-    boolean: ["case-sensitive", "C", "preview", "help", "h", "version", "v", "stdout"]
+    boolean: ["case-sensitive", "C", "preview", "copy", "c", "help", "h", "version", "v", "stdout"]
   }) as Argv;
 
   if (parsed.help || parsed.h) {
@@ -773,7 +778,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.0.7");
+    console.log("packx v3.0.8");
     process.exit(0);
   }
 
@@ -1106,7 +1111,8 @@ async function main() {
     toStdout = true;
   }
   const outputFile = typeof rawOutputArg === 'string' ? rawOutputArg : undefined;
-  const summaryOnly = !toStdout && !outputFile;
+  const wantsClipboard = Boolean((parsed as any).copy || (parsed as any).c);
+  const summaryOnly = !toStdout && !outputFile && !wantsClipboard;
   const outputStyle = parsed.style || "xml";
   const log = (msg: string) => (toStdout ? console.error(msg) : console.log(msg));
 
@@ -1121,7 +1127,7 @@ async function main() {
   } else {
     log(`📝 Files selected:`);
     relativePaths.forEach(p => log(`  • ${p}`));
-    if (!toStdout && !outputFile) {
+    if (summaryOnly) {
       log(`(Summary only. Use -o <file> or --stdout to write content)`);
     }
   }
