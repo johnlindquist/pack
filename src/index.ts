@@ -30,6 +30,8 @@ type Argv = mri.Argv & {
   l?: number;
   prompt?: string | string[];
   p?: string | string[];
+  "prompt-path"?: string | string[];
+  P?: string | string[];
   "case-sensitive"?: boolean;
   C?: boolean;
   copy?: boolean;
@@ -293,6 +295,7 @@ PACKX OPTIONS
   -f, --file PATH            Read configuration from file
   -l, --lines NUMBER         Context lines around matches (default: entire file)
   -p, --prompt TEXT         Append a Markdown prompt at end of output
+      --prompt-path PATH    Append contents of file as a prompt
   -C, --case-sensitive       Make search case-sensitive (default: case-insensitive)
       --preview              List matched files without bundling
   -h, --help                 Show this help message
@@ -544,6 +547,7 @@ function buildRepomixPassthroughArgs(parsed: Argv): string[] {
     "file",
     "lines",
     "prompt",
+    "prompt-path",
     "include",
     "ignore",
     "i",
@@ -557,6 +561,7 @@ function buildRepomixPassthroughArgs(parsed: Argv): string[] {
     "f",
     "l",
     "p",
+    "P",
     "C",
     "stdout",
     "preview",
@@ -762,6 +767,7 @@ async function main() {
       f: "file",
       l: "lines",
       p: "prompt",
+      P: "prompt-path",
       C: "case-sensitive",
       c: "copy",
       h: "help",
@@ -774,6 +780,7 @@ async function main() {
       "exclude-extensions", "x",
       "file", "f",
       "prompt", "p",
+      "prompt-path", "P",
       "include",
       "ignore", "i"
     ],
@@ -1149,7 +1156,19 @@ async function main() {
   const fileSizes: { path: string; size: number; tokens: number }[] = [];
   // Prepare optional user prompt to append
   const promptParts = normalizeStrings((parsed as any).prompt ?? (parsed as any).p).filter(Boolean);
-  const promptText = promptParts.join('\n\n').trim();
+  const promptPathVals = normalizeStrings((parsed as any)["prompt-path"] ?? (parsed as any).P).filter(Boolean);
+  const promptFileParts: string[] = [];
+  for (const pp of promptPathVals) {
+    try {
+      const txt = await fs.readFile(pp, 'utf8');
+      if (txt && txt.trim()) {
+        promptFileParts.push(txt.trim());
+      }
+    } catch (err) {
+      log(`⚠️  Could not read prompt file: ${pp}`);
+    }
+  }
+  const promptText = [...promptParts, ...promptFileParts].join('\n\n').trim();
   
   if (outputStyle === "xml") {
     if (!summaryOnly) {

@@ -374,6 +374,7 @@ __tests__
 | `--file` | `-f` | Read configuration from file |
 | `--lines` | `-l` | Number of lines around each match (default: entire file) |
 | `--prompt` | `-p` | Append a Markdown prompt at the end of the packed output |
+| `--prompt-path` |  | Append the contents of a file as the prompt |
 | `--case-sensitive` | `-C` | Make search case-sensitive (default: off) |
 | `--preview` | | Preview matched files without packing |
 | `--copy` | `-c` | Copy output to clipboard |
