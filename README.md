@@ -373,6 +373,7 @@ __tests__
 | `--exclude-extensions` | `-x` | Extensions to exclude (multiple or comma-separated) |
 | `--file` | `-f` | Read configuration from file |
 | `--lines` | `-l` | Number of lines around each match (default: entire file) |
+| `--prompt` | `-p` | Append a Markdown prompt at the end of the packed output |
 | `--case-sensitive` | `-C` | Make search case-sensitive (default: off) |
 | `--preview` | | Preview matched files without packing |
 | `--copy` | `-c` | Copy output to clipboard |

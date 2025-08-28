@@ -28,6 +28,8 @@ type Argv = mri.Argv & {
   f?: string;
   lines?: number;
   l?: number;
+  prompt?: string | string[];
+  p?: string | string[];
   "case-sensitive"?: boolean;
   C?: boolean;
   copy?: boolean;
@@ -290,6 +292,7 @@ PACKX OPTIONS
   -x, --exclude-extensions    Exclude these patterns (matched from end)
   -f, --file PATH            Read configuration from file
   -l, --lines NUMBER         Context lines around matches (default: entire file)
+  -p, --prompt TEXT         Append a Markdown prompt at end of output
   -C, --case-sensitive       Make search case-sensitive (default: case-insensitive)
       --preview              List matched files without bundling
   -h, --help                 Show this help message
@@ -540,6 +543,7 @@ function buildRepomixPassthroughArgs(parsed: Argv): string[] {
     "exclude-extensions",
     "file",
     "lines",
+    "prompt",
     "include",
     "ignore",
     "i",
@@ -552,6 +556,7 @@ function buildRepomixPassthroughArgs(parsed: Argv): string[] {
     "x",
     "f",
     "l",
+    "p",
     "C",
     "stdout",
     "preview",
@@ -756,6 +761,7 @@ async function main() {
       x: "exclude-extensions",
       f: "file",
       l: "lines",
+      p: "prompt",
       C: "case-sensitive",
       c: "copy",
       h: "help",
@@ -767,6 +773,7 @@ async function main() {
       "extensions", "e",
       "exclude-extensions", "x",
       "file", "f",
+      "prompt", "p",
       "include",
       "ignore", "i"
     ],
@@ -778,7 +785,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.0.8");
+    console.log("packx v3.0.9");
     process.exit(0);
   }
 
@@ -1140,6 +1147,9 @@ async function main() {
   let totalMatchCount = 0;
   let totalWindowCount = 0;
   const fileSizes: { path: string; size: number; tokens: number }[] = [];
+  // Prepare optional user prompt to append
+  const promptParts = normalizeStrings((parsed as any).prompt ?? (parsed as any).p).filter(Boolean);
+  const promptText = promptParts.join('\n\n').trim();
   
   if (outputStyle === "xml") {
     if (!summaryOnly) {
@@ -1278,6 +1288,11 @@ ${content}
     }
   }
   
+  // Append user-provided prompt as a Markdown block, if present
+  if (!summaryOnly && promptText) {
+    output += `\n\n---\n\n${promptText}\n`;
+  }
+
   // Write the output (file or stdout). Default is summary-only (no content output)
   if (toStdout) {
     process.stdout.write(output);
