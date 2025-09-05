@@ -792,7 +792,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.0.9");
+    console.log("packx v3.1.0");
     process.exit(0);
   }
 
@@ -863,7 +863,11 @@ async function main() {
 
   const includeExpanded = combinedIncludeList.flatMap(p => expandPattern(p, true));
   const ignoreExpanded = ignoreList.flatMap(p => expandPattern(p, false));
-  const includeMatchers = includeExpanded.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
+  // Split include patterns into absolute and relative for correct matching context
+  const includeExpandedAbs = includeExpanded.filter((p) => path.isAbsolute(p));
+  const includeExpandedRel = includeExpanded.filter((p) => !path.isAbsolute(p));
+  const includeMatchersAbs = includeExpandedAbs.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
+  const includeMatchersRel = includeExpandedRel.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
   const ignoreMatchers = ignoreExpanded.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
 
   // Check if config file is provided
@@ -978,6 +982,9 @@ async function main() {
 
   // 1) Discover files (respecting .gitignore) under each root
   const candidates = new Set<string>();
+  // Track include pattern stats for diagnostics and preview
+  const includePatternCounts = new Map<string, number>();
+  const includePatternSamples = new Map<string, string[]>();
 
   for (const root of roots) {
     const absRoot = path.resolve(root);
@@ -1043,6 +1050,14 @@ async function main() {
             dot: false,
             nodir: true,
           });
+          // Track stats per include pattern
+          includePatternCounts.set(inc, (includePatternCounts.get(inc) || 0) + files.length);
+          if (files.length > 0) {
+            const current = includePatternSamples.get(inc) || [];
+            const remaining = Math.max(0, 10 - current.length);
+            const toAdd = files.slice(0, remaining);
+            includePatternSamples.set(inc, [...current, ...toAdd]);
+          }
           for (const f of files) candidates.add(f);
         } catch {
           // ignore invalid patterns
@@ -1055,15 +1070,37 @@ async function main() {
   for (const f of positionalFileIncludes) candidates.add(f);
 
   if (!candidates.size) {
-    console.warn("⚠️  No files found with the specified extensions in the given roots.");
+    // Provide helpful diagnostics when include patterns are used
+    if (includeExpanded.length > 0) {
+      const zeroPatterns = includeExpanded.filter(p => (includePatternCounts.get(p) || 0) === 0);
+      if (zeroPatterns.length > 0) {
+        console.warn("⚠️  No files found. The following include patterns had zero matches:");
+        for (const ptn of zeroPatterns) console.warn(`  - ${ptn}`);
+      } else {
+        console.warn("⚠️  No files found with the specified extensions in the given roots.");
+      }
+    } else {
+      console.warn("⚠️  No files found with the specified extensions in the given roots.");
+    }
     process.exit(2);
   }
 
   // Apply include/ignore matchers on repo-relative paths
   const filteredCandidates: string[] = [];
+  const explicitSet = new Set(positionalFileIncludes);
+  const explicitOnly = positionalFileIncludes.length > 0;
   for (const p of candidates) {
     const rel = path.relative(process.cwd(), p).replace(/\\/g, '/');
-    if (includeMatchers.length && !includeMatchers.some(mm => mm.match(rel))) continue;
+    const absPosix = p.replace(/\\/g, '/');
+    if (explicitOnly && !explicitSet.has(p)) continue;
+    if (!explicitOnly) {
+      const hasIncludeFilters = (includeMatchersAbs.length + includeMatchersRel.length) > 0;
+      if (hasIncludeFilters) {
+        const matchRel = includeMatchersRel.length ? includeMatchersRel.some(mm => mm.match(rel)) : false;
+        const matchAbs = includeMatchersAbs.length ? includeMatchersAbs.some(mm => mm.match(absPosix)) : false;
+        if (!(matchRel || matchAbs)) continue;
+      }
+    }
     if (ignoreMatchers.length && ignoreMatchers.some(mm => mm.match(rel))) continue;
     filteredCandidates.push(p);
   }
@@ -1103,13 +1140,33 @@ async function main() {
 
   if (!matched.length) {
     console.warn("⚠️  No files matched the given strings.");
+    if (includeExpanded.length > 0) {
+      const zeroPatterns = includeExpanded.filter(p => (includePatternCounts.get(p) || 0) === 0);
+      if (zeroPatterns.length > 0) {
+        console.warn("Patterns with zero file matches:");
+        for (const ptn of zeroPatterns) console.warn(`  - ${ptn}`);
+      }
+    }
     process.exit(3);
   }
 
   if (parsed.preview) {
-    console.log("Matched files:");
-    for (const m of matched) console.log(m);
+    console.log("Matched files (sample):");
+    const sampleCount = Math.min(matched.length, 50);
+    for (const m of matched.slice(0, sampleCount)) console.log(m);
+    if (matched.length > sampleCount) {
+      console.log(`... and ${matched.length - sampleCount} more`);
+    }
     console.log(`\nTotal: ${matched.length} file(s).`);
+    if (includeExpanded.length > 0) {
+      console.log("\nInclude pattern matches:");
+      for (const ptn of includeExpanded) {
+        const cnt = includePatternCounts.get(ptn) || 0;
+        console.log(`- ${ptn}: ${cnt}`);
+        const smp = includePatternSamples.get(ptn) || [];
+        for (const s of smp) console.log(`   • ${s}`);
+      }
+    }
     process.exit(0);
   }
 
