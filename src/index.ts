@@ -792,7 +792,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.1.0");
+    console.log("packx v3.1.1");
     process.exit(0);
   }
 
@@ -816,17 +816,28 @@ async function main() {
     return /[\*\?\[\]\{\}!]/.test(s);
   }
   function expandPattern(p: string, forInclude = true): string[] {
-    // If pattern already has glob characters or path separators with glob, keep as-is
+    // If pattern already has glob characters, keep as-is
     if (hasGlobChars(p)) return [p];
-    const norm = p.replace(/^[./]+/, '');
+
+    // Normalize path separators to POSIX style for matching
+    let norm = p.replace(/\\/g, '/');
+
+    // Preserve hidden names like ".claude". Only strip a leading "./".
+    if (norm.startsWith('./')) {
+      norm = norm.slice(2);
+    }
+
+    // Do not strip a single leading '.' (hidden files/dirs) or '../'
+    // Do not strip a leading '/' (absolute path) either
+
     const patterns: string[] = [];
-    // exact relative path (file at root)
+    // exact path at root (or absolute, if provided)
     patterns.push(norm);
-    // any file named p anywhere
+    // any file/dir named norm anywhere
     patterns.push(`**/${norm}`);
-    // any path under a directory named p at root
+    // any path under a directory named norm at root
     patterns.push(`${norm}/**`);
-    // any path under a directory named p anywhere
+    // any path under a directory named norm anywhere
     patterns.push(`**/${norm}/**`);
     return Array.from(new Set(patterns));
   }
