@@ -1023,6 +1023,17 @@ async function main() {
           '**/*.log',
           '**/.DS_Store',
           '**/Thumbs.db',
+          // Lockfiles - typically not useful for LLM context
+          '**/package-lock.json',
+          '**/yarn.lock',
+          '**/pnpm-lock.yaml',
+          '**/bun.lockb',
+          '**/bun.lock',
+          '**/Gemfile.lock',
+          '**/Cargo.lock',
+          '**/poetry.lock',
+          '**/Pipfile.lock',
+          '**/composer.lock',
           ...excludePatterns  // Add user-defined exclude patterns
         ],
         absolute: true,
@@ -1055,7 +1066,18 @@ async function main() {
               '**/temp/**',
               '**/*.log',
               '**/.DS_Store',
-              '**/Thumbs.db'
+              '**/Thumbs.db',
+              // Lockfiles - typically not useful for LLM context
+              '**/package-lock.json',
+              '**/yarn.lock',
+              '**/pnpm-lock.yaml',
+              '**/bun.lockb',
+              '**/bun.lock',
+              '**/Gemfile.lock',
+              '**/Cargo.lock',
+              '**/poetry.lock',
+              '**/Pipfile.lock',
+              '**/composer.lock'
             ],
             absolute: true,
             dot: false,
