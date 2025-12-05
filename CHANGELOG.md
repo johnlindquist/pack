@@ -1,3 +1,15 @@
+# [3.3.0](https://github.com/johnlindquist/pack/compare/v3.2.0...v3.3.0) (2025-12-05)
+
+
+### Bug Fixes
+
+* **repo:** remove unused files and update dependencies ([f662a5c](https://github.com/johnlindquist/pack/commit/f662a5c4605e45e9219fdbef7c4db64ad5178211))
+
+
+### Features
+
+* **core:** extract core logic to separate module with tests ([01b9763](https://github.com/johnlindquist/pack/commit/01b976311b8610f60cf03f699245f84aac1ccda6))
+
 # [3.2.0](https://github.com/johnlindquist/pack/compare/v3.1.1...v3.2.0) (2025-12-05)
 
 
