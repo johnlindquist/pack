@@ -33,6 +33,8 @@
   },
   "scripts": {
     "build": "bun build ./src/index.ts --outdir dist --target node --format esm",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
     "dev": "bun run ./src/index.ts --help",
     "prepublishOnly": "npm run update-version-in-code && npm run build",
     "update-version-in-code": "node scripts/update-version.js",
@@ -48,19 +50,19 @@
     "compile:windows": "bun build ./src/index.ts --compile --target bun-windows-x64 --outfile bin/pack-windows-x64.exe"
   },
   "dependencies": {
-    "glob": "^10.3.10",
-    "minimatch": "^9.0.3",
+    "glob": "^13.0.0",
+    "minimatch": "^10.1.1",
     "mri": "^1.2.0",
-    "repomix": "^1.2.1"
+    "repomix": "^1.9.2"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/npm": "^13.1.2",
-    "@types/bun": "latest",
-    "@types/node": "^22.0.0",
+    "@types/bun": "^1.3.3",
+    "@types/node": "^24.10.1",
     "semantic-release": "^25.0.2",
-    "typescript": "^5.5.0"
+    "typescript": "^5.9.3"
   },
   "engines": {
     "bun": ">=1.1.0"
