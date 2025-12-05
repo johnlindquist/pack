@@ -1,3 +1,10 @@
+# [3.4.0](https://github.com/johnlindquist/pack/compare/v3.3.0...v3.4.0) (2025-12-05)
+
+
+### Features
+
+* add git-aware context, interactive selection, and related files discovery ([4d4525d](https://github.com/johnlindquist/pack/commit/4d4525d33ab134c5c7e66994ca568a7a9eae23c1))
+
 # [3.3.0](https://github.com/johnlindquist/pack/compare/v3.2.0...v3.3.0) (2025-12-05)
 
 
