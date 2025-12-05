@@ -54,8 +54,11 @@
     "repomix": "^1.2.1"
   },
   "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
     "@types/bun": "latest",
     "@types/node": "^22.0.0",
+    "semantic-release": "^25.0.2",
     "typescript": "^5.5.0"
   },
   "engines": {
