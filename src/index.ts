@@ -14,6 +14,14 @@ import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { glob } from "glob";
 import { Minimatch } from "minimatch";
+import { checkbox } from "@inquirer/prompts";
+import {
+  isGitRepository,
+  getGitStagedFiles,
+  getGitDirtyFiles,
+  getGitDiffFiles,
+  expandWithRelatedFiles,
+} from "./core.js";
 
 type Argv = mri.Argv & {
   strings?: string | string[];
@@ -41,6 +49,16 @@ type Argv = mri.Argv & {
   h?: boolean;
   version?: boolean;
   v?: boolean;
+  // Git-aware context flags
+  staged?: boolean;
+  diff?: boolean;
+  dirty?: boolean;
+  // Interactive selection
+  interactive?: boolean;
+  I?: boolean;
+  // Related files discovery
+  related?: boolean;
+  r?: boolean;
 };
 
 function printHelp() {
@@ -278,10 +296,42 @@ USAGE
   # Find potential performance issues
   packx -s "forEach" -s "map" -s "filter" -s "reduce" \\
         -s "for (" -s "while (" -l 20 -o loops-analysis.md
-  
+
   # Find all async operations
   packx -s "async" -s "await" -s "Promise" -s "then(" \\
         -e "ts,tsx" -l 30 --compress
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│                         GIT-AWARE WORKFLOWS                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+📝 REVIEW STAGED CHANGES (Perfect for PR descriptions)
+  # Bundle only files staged for commit
+  packx --staged --copy
+
+  # Staged changes with search filter
+  packx --staged -s "TODO" -l 10 -c
+
+🔧 WORK-IN-PROGRESS MODE
+  # Bundle files changed in current branch vs main
+  packx --diff -c
+
+  # Bundle all dirty (modified + untracked) files
+  packx --dirty --style markdown -o wip.md
+
+🎯 INTERACTIVE FILE SELECTION
+  # Search, then interactively select which files to bundle
+  packx -s "useState" -I
+
+  # Combine with other filters for refined selection
+  packx -s "API" -e "ts,tsx" -I --copy
+
+🔗 RELATED FILES DISCOVERY
+  # When bundling Button.tsx, also include Button.test.tsx, Button.css, etc.
+  packx src/components/Button.tsx -r
+
+  # Combine with git-aware context
+  packx --staged -r -c
 
 ╭──────────────────────────────────────────────────────────────────────────────╮
 │                              OPTIONS REFERENCE                               │
@@ -300,6 +350,15 @@ PACKX OPTIONS
       --preview              List matched files without bundling
   -h, --help                 Show this help message
   -v, --version              Show version number
+
+GIT-AWARE CONTEXT (Work-in-Progress Mode)
+      --staged               Bundle only files staged for commit
+      --diff                 Bundle files changed vs main/master branch
+      --dirty                Bundle modified + untracked files in working tree
+
+INTERACTIVE & RELATED FILES
+  -I, --interactive          Interactively select files from matches
+  -r, --related              Include related files (tests, styles, stories)
 
 REPOMIX PASSTHROUGH OPTIONS
   -o, --output PATH          Output file path (default: repomix-output.xml)
@@ -771,7 +830,9 @@ async function main() {
       C: "case-sensitive",
       c: "copy",
       h: "help",
-      v: "version"
+      v: "version",
+      I: "interactive",
+      r: "related"
     },
     string: [
       "strings", "s",
@@ -784,7 +845,21 @@ async function main() {
       "include",
       "ignore", "i"
     ],
-    boolean: ["case-sensitive", "C", "preview", "copy", "c", "help", "h", "version", "v", "stdout"]
+    boolean: [
+      "case-sensitive", "C",
+      "preview",
+      "copy", "c",
+      "help", "h",
+      "version", "v",
+      "stdout",
+      // Git-aware context
+      "staged",
+      "diff",
+      "dirty",
+      // Interactive & related
+      "interactive", "I",
+      "related", "r"
+    ]
   }) as Argv;
 
   if (parsed.help || parsed.h) {
@@ -987,9 +1062,15 @@ async function main() {
   const pattern: RegExp | null = strings.length > 0
     ? new RegExp(strings.map(escRegex).join("|"), regexFlags)
     : null;
-  const excludePattern: RegExp | null = excludeStrings.length > 0 
+  const excludePattern: RegExp | null = excludeStrings.length > 0
     ? new RegExp(excludeStrings.map(escRegex).join("|"), regexFlags)
     : null;
+
+  // Check for git-aware context flags
+  const useGitStaged = Boolean(parsed.staged);
+  const useGitDiff = Boolean(parsed.diff);
+  const useGitDirty = Boolean(parsed.dirty);
+  const useGitContext = useGitStaged || useGitDiff || useGitDirty;
 
   // 1) Discover files (respecting .gitignore) under each root
   const candidates = new Set<string>();
@@ -997,7 +1078,61 @@ async function main() {
   const includePatternCounts = new Map<string, number>();
   const includePatternSamples = new Map<string, string[]>();
 
-  for (const root of roots) {
+  // Git-aware context: use git to determine files instead of glob
+  if (useGitContext) {
+    const isGitRepo = await isGitRepository();
+    if (!isGitRepo) {
+      console.error("❌ Git-aware options (--staged, --diff, --dirty) require a git repository.");
+      process.exit(1);
+    }
+
+    let gitFiles: string[] = [];
+
+    if (useGitStaged) {
+      console.log("🔍 Finding staged files...");
+      gitFiles = await getGitStagedFiles();
+    } else if (useGitDirty) {
+      console.log("🔍 Finding modified and untracked files...");
+      gitFiles = await getGitDirtyFiles();
+    } else if (useGitDiff) {
+      console.log("🔍 Finding files changed vs main branch...");
+      gitFiles = await getGitDiffFiles();
+    }
+
+    if (gitFiles.length === 0) {
+      if (useGitStaged) {
+        console.warn("⚠️  No files are staged. Use 'git add' to stage files first.");
+      } else if (useGitDirty) {
+        console.warn("⚠️  No modified or untracked files found.");
+      } else if (useGitDiff) {
+        console.warn("⚠️  No files differ from the main branch.");
+      }
+      process.exit(0);
+    }
+
+    console.log(`📁 Found ${gitFiles.length} file(s) from git`);
+
+    // Filter git files by extension if specified
+    for (const file of gitFiles) {
+      const ext = path.extname(file).toLowerCase();
+      if (extensions.size === 0 || extensions.has(ext)) {
+        // Also check exclude patterns
+        const rel = path.relative(process.cwd(), file).replace(/\\/g, '/');
+        let excluded = false;
+        for (const ep of excludePatterns) {
+          if (rel.endsWith(ep) || file.endsWith(ep)) {
+            excluded = true;
+            break;
+          }
+        }
+        if (!excluded) {
+          candidates.add(file);
+        }
+      }
+    }
+  } else {
+    // Standard file discovery via glob
+    for (const root of roots) {
     const absRoot = path.resolve(root);
     
     // Build glob patterns for each extension
@@ -1098,9 +1233,12 @@ async function main() {
       }
     }
   }
+  } // End of else block for standard file discovery
 
-  // Include explicit file paths provided positionally
-  for (const f of positionalFileIncludes) candidates.add(f);
+  // Include explicit file paths provided positionally (not in git mode)
+  if (!useGitContext) {
+    for (const f of positionalFileIncludes) candidates.add(f);
+  }
 
   if (!candidates.size) {
     // Provide helpful diagnostics when include patterns are used
@@ -1168,6 +1306,78 @@ async function main() {
           foundExtensions.add(ext);
         }
       }
+    }
+  }
+
+  // Interactive selection mode: let user pick which files to include
+  const wantInteractive = Boolean(parsed.interactive || parsed.I);
+  if (wantInteractive && matched.length > 0) {
+    const cwd = process.cwd();
+
+    // Check if running in a TTY (interactive terminal)
+    if (!process.stdin.isTTY) {
+      console.warn("⚠️  Interactive mode (-I) requires a terminal. Skipping selection.");
+    } else {
+      console.log(`\n🎯 Interactive mode: Select files to include (${matched.length} matched)\n`);
+
+      try {
+        const choices = matched.map((file) => {
+          const rel = path.relative(cwd, file);
+          // Get file size for display
+          let sizeStr = "";
+          try {
+            const stat = require("fs").statSync(file);
+            const kb = Math.round(stat.size / 1024);
+            sizeStr = kb > 0 ? ` (${kb}KB)` : " (<1KB)";
+          } catch {
+            // ignore
+          }
+          return {
+            name: `${rel}${sizeStr}`,
+            value: file,
+            checked: true, // Pre-select all by default
+          };
+        });
+
+        const selected = await checkbox({
+          message: "Select files to bundle:",
+          choices,
+          pageSize: 20,
+        });
+
+        if (selected.length === 0) {
+          console.log("\n⚠️  No files selected. Exiting.");
+          process.exit(0);
+        }
+
+        // Replace matched with selected
+        matched.length = 0;
+        matched.push(...selected);
+        console.log(`\n✅ Selected ${matched.length} file(s)\n`);
+      } catch (error: any) {
+        // User cancelled (Ctrl+C) or other error
+        if (error.name === "ExitPromptError") {
+          console.log("\n⚠️  Selection cancelled.");
+          process.exit(0);
+        }
+        throw error;
+      }
+    }
+  }
+
+  // Related files discovery: expand matched files to include siblings
+  const wantRelated = Boolean(parsed.related || parsed.r);
+  if (wantRelated && matched.length > 0) {
+    const beforeCount = matched.length;
+    const expanded = await expandWithRelatedFiles(matched);
+
+    if (expanded.length > beforeCount) {
+      const added = expanded.length - beforeCount;
+      console.log(`🔗 Found ${added} related file(s)`);
+
+      // Replace matched with expanded list
+      matched.length = 0;
+      matched.push(...expanded);
     }
   }
 

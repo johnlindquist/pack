@@ -1,4 +1,6 @@
 import { promises as fs } from "node:fs";
+import { spawn } from "node:child_process";
+import * as path from "node:path";
 
 /**
  * Core logic functions for packx - extracted for testability
@@ -357,4 +359,244 @@ export function extensionToGlobPattern(ext: string): string {
  */
 export function hasGlobChars(s: string): boolean {
   return /[\*\?\[\]\{\}!]/.test(s);
+}
+
+// ============================================================================
+// Git-Aware Context Functions
+// ============================================================================
+
+/**
+ * Execute a git command and return stdout as array of lines
+ */
+async function execGit(args: string[], cwd?: string): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn("git", args, {
+      cwd: cwd || process.cwd(),
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    proc.stdout.on("data", (data) => (stdout += data.toString()));
+    proc.stderr.on("data", (data) => (stderr += data.toString()));
+
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`git ${args.join(" ")} failed: ${stderr}`));
+      } else {
+        resolve(
+          stdout
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean)
+        );
+      }
+    });
+
+    proc.on("error", reject);
+  });
+}
+
+/**
+ * Check if the current directory is a git repository
+ */
+export async function isGitRepository(cwd?: string): Promise<boolean> {
+  try {
+    await execGit(["rev-parse", "--is-inside-work-tree"], cwd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the main/master branch name
+ */
+export async function getMainBranch(cwd?: string): Promise<string> {
+  try {
+    // Try to get the default branch from remote origin
+    const lines = await execGit(
+      ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
+      cwd
+    );
+    if (lines.length > 0) {
+      // Returns something like "origin/main", extract just "main"
+      return lines[0].replace(/^origin\//, "");
+    }
+  } catch {
+    // Fallback: check if main or master exists
+    try {
+      await execGit(["rev-parse", "--verify", "main"], cwd);
+      return "main";
+    } catch {
+      try {
+        await execGit(["rev-parse", "--verify", "master"], cwd);
+        return "master";
+      } catch {
+        // Last resort
+        return "main";
+      }
+    }
+  }
+  return "main";
+}
+
+/**
+ * Get files that are staged for commit
+ */
+export async function getGitStagedFiles(cwd?: string): Promise<string[]> {
+  const lines = await execGit(
+    ["diff", "--cached", "--name-only", "--diff-filter=ACMR"],
+    cwd
+  );
+  const root = cwd || process.cwd();
+  return lines.map((f) => path.resolve(root, f));
+}
+
+/**
+ * Get files that have been modified in the working tree (unstaged changes)
+ */
+export async function getGitDirtyFiles(cwd?: string): Promise<string[]> {
+  // Get both modified and untracked files
+  const modified = await execGit(
+    ["diff", "--name-only", "--diff-filter=ACMR"],
+    cwd
+  );
+  const untracked = await execGit(
+    ["ls-files", "--others", "--exclude-standard"],
+    cwd
+  );
+  const root = cwd || process.cwd();
+  const all = [...new Set([...modified, ...untracked])];
+  return all.map((f) => path.resolve(root, f));
+}
+
+/**
+ * Get files that differ from a base branch (typically main/master)
+ */
+export async function getGitDiffFiles(
+  baseBranch?: string,
+  cwd?: string
+): Promise<string[]> {
+  const branch = baseBranch || (await getMainBranch(cwd));
+
+  // Get the merge base between current branch and base branch
+  let mergeBase: string;
+  try {
+    const lines = await execGit(["merge-base", branch, "HEAD"], cwd);
+    mergeBase = lines[0];
+  } catch {
+    // If merge-base fails, use the branch directly
+    mergeBase = branch;
+  }
+
+  const lines = await execGit(
+    ["diff", "--name-only", "--diff-filter=ACMR", mergeBase],
+    cwd
+  );
+  const root = cwd || process.cwd();
+  return lines.map((f) => path.resolve(root, f));
+}
+
+// ============================================================================
+// Related Files Discovery
+// ============================================================================
+
+/**
+ * Common related file extensions to look for
+ */
+const RELATED_PATTERNS: Record<string, string[]> = {
+  // Test files
+  ".ts": [".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx", ".stories.tsx", ".stories.ts"],
+  ".tsx": [".test.tsx", ".spec.tsx", ".test.ts", ".spec.ts", ".stories.tsx", ".stories.ts"],
+  ".js": [".test.js", ".spec.js", ".test.jsx", ".spec.jsx", ".stories.jsx", ".stories.js"],
+  ".jsx": [".test.jsx", ".spec.jsx", ".test.js", ".spec.js", ".stories.jsx", ".stories.js"],
+  ".py": ["_test.py", ".test.py", ".spec.py"],
+  ".go": ["_test.go"],
+  ".rb": ["_spec.rb", ".spec.rb", "_test.rb"],
+  ".rs": [".test.rs"],
+  // Style files
+  ".vue": [".css", ".scss", ".less", ".module.css", ".module.scss"],
+  ".svelte": [".css", ".scss", ".module.css"],
+  // Config/data files
+  ".json": [".schema.json", ".d.ts"],
+};
+
+/**
+ * Find related files for a given file path
+ * Related files share the same basename but have different extensions
+ * (e.g., Button.tsx → Button.test.tsx, Button.css, Button.stories.tsx)
+ */
+export async function findRelatedFiles(
+  filePath: string,
+  existingFiles?: Set<string>
+): Promise<string[]> {
+  const dir = path.dirname(filePath);
+  const ext = path.extname(filePath);
+  const basename = path.basename(filePath, ext);
+
+  // Remove common suffixes to find base name
+  // e.g., "Button.test" → "Button", "Button.stories" → "Button"
+  const baseParts = basename.split(".");
+  const coreName = baseParts[0];
+
+  const related: string[] = [];
+
+  try {
+    const entries = await fs.readdir(dir);
+
+    for (const entry of entries) {
+      const entryPath = path.join(dir, entry);
+
+      // Skip the original file
+      if (entryPath === filePath) continue;
+
+      // Skip if already in the existing set
+      if (existingFiles?.has(entryPath)) continue;
+
+      // Check if entry starts with the same core name
+      const entryExt = path.extname(entry);
+      const entryBasename = path.basename(entry, entryExt);
+      const entryCoreName = entryBasename.split(".")[0];
+
+      if (entryCoreName === coreName) {
+        // Verify it's a file
+        try {
+          const stat = await fs.stat(entryPath);
+          if (stat.isFile()) {
+            related.push(entryPath);
+          }
+        } catch {
+          // Skip if can't stat
+        }
+      }
+    }
+  } catch {
+    // Directory read failed, return empty
+  }
+
+  return related;
+}
+
+/**
+ * Expand a list of files to include their related files
+ */
+export async function expandWithRelatedFiles(
+  files: string[]
+): Promise<string[]> {
+  const existing = new Set(files);
+  const expanded = [...files];
+
+  for (const file of files) {
+    const related = await findRelatedFiles(file, existing);
+    for (const r of related) {
+      if (!existing.has(r)) {
+        existing.add(r);
+        expanded.push(r);
+      }
+    }
+  }
+
+  return expanded;
 }

@@ -13,6 +13,9 @@ import {
   getDefaultExtensions,
   extensionToGlobPattern,
   hasGlobChars,
+  findRelatedFiles,
+  expandWithRelatedFiles,
+  isGitRepository,
 } from "./core";
 
 describe("parseCSV", () => {
@@ -470,5 +473,89 @@ describe("hasGlobChars", () => {
   test("returns false for plain strings", () => {
     expect(hasGlobChars("file.ts")).toBe(false);
     expect(hasGlobChars("src/components")).toBe(false);
+  });
+});
+
+// Tests for git-aware and related files features
+describe("isGitRepository", () => {
+  test("returns true for current directory (which is a git repo)", async () => {
+    const result = await isGitRepository();
+    expect(result).toBe(true);
+  });
+
+  test("returns false for non-existent directory", async () => {
+    const result = await isGitRepository("/tmp/nonexistent-dir-12345");
+    expect(result).toBe(false);
+  });
+});
+
+describe("findRelatedFiles", () => {
+  test("finds test file for core.ts", async () => {
+    const coreFile = `${process.cwd()}/src/core.ts`;
+    const related = await findRelatedFiles(coreFile);
+    const relatedNames = related.map((f) => f.split("/").pop());
+    expect(relatedNames).toContain("core.test.ts");
+  });
+
+  test("excludes the original file from results", async () => {
+    const coreFile = `${process.cwd()}/src/core.ts`;
+    const related = await findRelatedFiles(coreFile);
+    expect(related).not.toContain(coreFile);
+  });
+
+  test("excludes files already in existing set", async () => {
+    const coreFile = `${process.cwd()}/src/core.ts`;
+    const testFile = `${process.cwd()}/src/core.test.ts`;
+    const existing = new Set([testFile]);
+    const related = await findRelatedFiles(coreFile, existing);
+    expect(related).not.toContain(testFile);
+  });
+
+  test("returns empty array for file with no siblings", async () => {
+    // package.json has no related files with same basename
+    const pkgFile = `${process.cwd()}/package.json`;
+    const related = await findRelatedFiles(pkgFile);
+    // Should only find files starting with "package."
+    const relatedNames = related.map((f) => f.split("/").pop());
+    // Filter to ensure we only count things that are actually "package.*"
+    const packageRelated = relatedNames.filter((n) => n?.startsWith("package."));
+    // package-lock.json would be ignored typically
+    expect(packageRelated.length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("expandWithRelatedFiles", () => {
+  test("expands file list with related files", async () => {
+    const coreFile = `${process.cwd()}/src/core.ts`;
+    const expanded = await expandWithRelatedFiles([coreFile]);
+
+    expect(expanded.length).toBeGreaterThan(1);
+    expect(expanded).toContain(coreFile);
+
+    const expandedNames = expanded.map((f) => f.split("/").pop());
+    expect(expandedNames).toContain("core.test.ts");
+  });
+
+  test("does not duplicate files", async () => {
+    const coreFile = `${process.cwd()}/src/core.ts`;
+    const testFile = `${process.cwd()}/src/core.test.ts`;
+    const expanded = await expandWithRelatedFiles([coreFile, testFile]);
+
+    // Count occurrences of each file
+    const counts = new Map<string, number>();
+    for (const f of expanded) {
+      counts.set(f, (counts.get(f) || 0) + 1);
+    }
+
+    // Each file should appear exactly once
+    for (const [file, count] of counts) {
+      expect(count).toBe(1);
+    }
+  });
+
+  test("preserves original files even if they have no related files", async () => {
+    const pkgFile = `${process.cwd()}/package.json`;
+    const expanded = await expandWithRelatedFiles([pkgFile]);
+    expect(expanded).toContain(pkgFile);
   });
 });

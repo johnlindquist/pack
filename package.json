@@ -50,6 +50,7 @@
     "compile:windows": "bun build ./src/index.ts --compile --target bun-windows-x64 --outfile bin/pack-windows-x64.exe"
   },
   "dependencies": {
+    "@inquirer/prompts": "^8.0.2",
     "glob": "^13.0.0",
     "minimatch": "^10.1.1",
     "mri": "^1.2.0",
