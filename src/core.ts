@@ -1,25 +1,63 @@
+/**
+ * Core logic functions for packx - extracted for testability
+ * This module re-exports from specialized modules for backward compatibility
+ */
+
 import { promises as fs } from "node:fs";
 import { spawn } from "node:child_process";
 import * as path from "node:path";
 
-/**
- * Core logic functions for packx - extracted for testability
- */
+// Re-export from new modules
+export {
+  findAllMatches,
+  extractContextWindows,
+  formatContextWindows,
+  escRegex,
+  buildPattern,
+  type MatchPosition,
+  type ContextWindow
+} from "./context.js";
 
-// Type definitions
-export type MatchPosition = {
-  line: number;
-  column: number;
-  match: string;
-};
+export {
+  countTokens,
+  countTokensHeuristic,
+  isBinaryFile,
+  isBinaryContent,
+  analyzeFile,
+  formatTokenCount,
+  getTokenWarning,
+  type FileAnalysis
+} from "./analysis.js";
 
-export type ContextWindow = {
-  startLine: number;
-  endLine: number;
-  lines: string[];
-  matches: MatchPosition[];
-};
+export {
+  scanDirectory,
+  filterByContent,
+  applyMatchers,
+  hasGlobChars,
+  expandPattern,
+  loadGitignore,
+  DEFAULT_IGNORE_PATTERNS
+} from "./scanner.js";
 
+export {
+  StreamFormatter,
+  StringBufferStream,
+  formatToString,
+  formatFile,
+  createHeader,
+  createFooter,
+  type OutputStyle,
+  type FormatOptions,
+  type FileStats
+} from "./formatter.js";
+
+export {
+  parseArgs,
+  printHelp,
+  type Argv
+} from "./cli.js";
+
+// Type definitions for backward compatibility
 export type ParsedConfig = {
   search: string[];
   extensions: string[];
@@ -50,112 +88,6 @@ export function toExtSet(exts: string[]): Set<string> {
 }
 
 /**
- * Escape regex special characters for safe substring search
- */
-export function escRegex(lit: string): string {
-  return lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Find all matches of a pattern in content, returning line/column positions
- */
-export function findAllMatches(content: string, pattern: RegExp): MatchPosition[] {
-  const lines = content.split('\n');
-  const matches: MatchPosition[] = [];
-
-  lines.forEach((line, lineIndex) => {
-    let match;
-    const linePattern = new RegExp(pattern.source, pattern.flags.replace('g', '') + 'g');
-    while ((match = linePattern.exec(line)) !== null) {
-      matches.push({
-        line: lineIndex + 1, // 1-based line numbers
-        column: match.index,
-        match: match[0]
-      });
-    }
-  });
-
-  return matches;
-}
-
-/**
- * Extract context windows around pattern matches
- */
-export function extractContextWindows(
-  content: string,
-  pattern: RegExp,
-  contextLines: number
-): ContextWindow[] {
-  const lines = content.split('\n');
-  const matches = findAllMatches(content, pattern);
-
-  if (matches.length === 0) return [];
-
-  // Create initial windows
-  const windows: ContextWindow[] = [];
-
-  for (const match of matches) {
-    const startLine = Math.max(1, match.line - contextLines);
-    const endLine = Math.min(lines.length, match.line + contextLines);
-
-    windows.push({
-      startLine,
-      endLine,
-      lines: lines.slice(startLine - 1, endLine),
-      matches: [match]
-    });
-  }
-
-  // Merge overlapping windows
-  const merged: ContextWindow[] = [];
-  let current: ContextWindow | null = null;
-
-  for (const window of windows) {
-    if (!current) {
-      current = window;
-    } else if (window.startLine <= current.endLine + 1) {
-      // Merge windows
-      current.endLine = Math.max(current.endLine, window.endLine);
-      current.lines = lines.slice(current.startLine - 1, current.endLine);
-      current.matches.push(...window.matches);
-    } else {
-      // Start new window
-      merged.push(current);
-      current = window;
-    }
-  }
-
-  if (current) {
-    merged.push(current);
-  }
-
-  return merged;
-}
-
-/**
- * Format context windows for output with line numbers
- */
-export function formatContextWindows(windows: ContextWindow[], filePath: string): string {
-  if (windows.length === 0) return '';
-
-  let output = '';
-  for (const window of windows) {
-    // Add separator between windows
-    if (output) {
-      output += '\n  ...\n';
-    }
-
-    // Add lines with line numbers
-    window.lines.forEach((line, index) => {
-      const lineNum = window.startLine + index;
-      output += `${String(lineNum).padStart(6, ' ')}| ${line}\n`;
-    });
-  }
-
-  return output;
-}
-
-/**
  * Check if file contains any of the search strings (and none of the exclude strings)
  */
 export async function fileContainsAnyStrings(
@@ -163,10 +95,15 @@ export async function fileContainsAnyStrings(
   pattern?: RegExp | null,
   excludePattern?: RegExp | null
 ): Promise<boolean> {
+  const { isBinaryFile } = await import("./analysis.js");
+
   try {
     const stat = await fs.stat(absPath);
     // Skip extremely large files (> 10MB)
     if (stat.size > 10 * 1024 * 1024) return false;
+
+    // Skip binary files
+    if (await isBinaryFile(absPath)) return false;
 
     const buf = await fs.readFile(absPath, "utf8");
 
@@ -235,6 +172,9 @@ export function buildRepomixPassthroughArgs(parsed: Record<string, any>): string
     "h",
     "version",
     "v",
+    "regex",
+    "R",
+    "smart-context"
   ]);
 
   for (const [key, val] of Object.entries(parsed)) {
@@ -274,12 +214,6 @@ export function normalizeStrings(value: string | string[] | undefined): string[]
  * Parse config file in INI-like format
  */
 export async function parseConfigFile(filePath: string): Promise<ParsedConfig> {
-  const config: ParsedConfig = {
-    search: [],
-    extensions: [],
-    exclude: []
-  };
-
   const content = await fs.readFile(filePath, 'utf8');
   return parseConfigContent(content);
 }
@@ -354,13 +288,6 @@ export function extensionToGlobPattern(ext: string): string {
   return ext;
 }
 
-/**
- * Check if a pattern has glob characters
- */
-export function hasGlobChars(s: string): boolean {
-  return /[\*\?\[\]\{\}!]/.test(s);
-}
-
 // ============================================================================
 // Git-Aware Context Functions
 // ============================================================================
@@ -415,17 +342,14 @@ export async function isGitRepository(cwd?: string): Promise<boolean> {
  */
 export async function getMainBranch(cwd?: string): Promise<string> {
   try {
-    // Try to get the default branch from remote origin
     const lines = await execGit(
       ["symbolic-ref", "refs/remotes/origin/HEAD", "--short"],
       cwd
     );
     if (lines.length > 0) {
-      // Returns something like "origin/main", extract just "main"
       return lines[0].replace(/^origin\//, "");
     }
   } catch {
-    // Fallback: check if main or master exists
     try {
       await execGit(["rev-parse", "--verify", "main"], cwd);
       return "main";
@@ -434,7 +358,6 @@ export async function getMainBranch(cwd?: string): Promise<string> {
         await execGit(["rev-parse", "--verify", "master"], cwd);
         return "master";
       } catch {
-        // Last resort
         return "main";
       }
     }
@@ -458,7 +381,6 @@ export async function getGitStagedFiles(cwd?: string): Promise<string[]> {
  * Get files that have been modified in the working tree (unstaged changes)
  */
 export async function getGitDirtyFiles(cwd?: string): Promise<string[]> {
-  // Get both modified and untracked files
   const modified = await execGit(
     ["diff", "--name-only", "--diff-filter=ACMR"],
     cwd
@@ -481,13 +403,11 @@ export async function getGitDiffFiles(
 ): Promise<string[]> {
   const branch = baseBranch || (await getMainBranch(cwd));
 
-  // Get the merge base between current branch and base branch
   let mergeBase: string;
   try {
     const lines = await execGit(["merge-base", branch, "HEAD"], cwd);
     mergeBase = lines[0];
   } catch {
-    // If merge-base fails, use the branch directly
     mergeBase = branch;
   }
 
@@ -504,29 +424,7 @@ export async function getGitDiffFiles(
 // ============================================================================
 
 /**
- * Common related file extensions to look for
- */
-const RELATED_PATTERNS: Record<string, string[]> = {
-  // Test files
-  ".ts": [".test.ts", ".spec.ts", ".test.tsx", ".spec.tsx", ".stories.tsx", ".stories.ts"],
-  ".tsx": [".test.tsx", ".spec.tsx", ".test.ts", ".spec.ts", ".stories.tsx", ".stories.ts"],
-  ".js": [".test.js", ".spec.js", ".test.jsx", ".spec.jsx", ".stories.jsx", ".stories.js"],
-  ".jsx": [".test.jsx", ".spec.jsx", ".test.js", ".spec.js", ".stories.jsx", ".stories.js"],
-  ".py": ["_test.py", ".test.py", ".spec.py"],
-  ".go": ["_test.go"],
-  ".rb": ["_spec.rb", ".spec.rb", "_test.rb"],
-  ".rs": [".test.rs"],
-  // Style files
-  ".vue": [".css", ".scss", ".less", ".module.css", ".module.scss"],
-  ".svelte": [".css", ".scss", ".module.css"],
-  // Config/data files
-  ".json": [".schema.json", ".d.ts"],
-};
-
-/**
  * Find related files for a given file path
- * Related files share the same basename but have different extensions
- * (e.g., Button.tsx → Button.test.tsx, Button.css, Button.stories.tsx)
  */
 export async function findRelatedFiles(
   filePath: string,
@@ -535,9 +433,6 @@ export async function findRelatedFiles(
   const dir = path.dirname(filePath);
   const ext = path.extname(filePath);
   const basename = path.basename(filePath, ext);
-
-  // Remove common suffixes to find base name
-  // e.g., "Button.test" → "Button", "Button.stories" → "Button"
   const baseParts = basename.split(".");
   const coreName = baseParts[0];
 
@@ -549,19 +444,14 @@ export async function findRelatedFiles(
     for (const entry of entries) {
       const entryPath = path.join(dir, entry);
 
-      // Skip the original file
       if (entryPath === filePath) continue;
-
-      // Skip if already in the existing set
       if (existingFiles?.has(entryPath)) continue;
 
-      // Check if entry starts with the same core name
       const entryExt = path.extname(entry);
       const entryBasename = path.basename(entry, entryExt);
       const entryCoreName = entryBasename.split(".")[0];
 
       if (entryCoreName === coreName) {
-        // Verify it's a file
         try {
           const stat = await fs.stat(entryPath);
           if (stat.isFile()) {
@@ -573,7 +463,7 @@ export async function findRelatedFiles(
       }
     }
   } catch {
-    // Directory read failed, return empty
+    // Directory read failed
   }
 
   return related;

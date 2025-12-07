@@ -1,718 +1,41 @@
 #!/usr/bin/env node
 /**
- * repomix-filter-pack
+ * packx - Smart file filter for AI consumption
  *
  * Usage:
- *   pack -s "setFlags" -s "flaggedValue" -e "ts,tsx" [repomix flags...]
+ *   packx -s "setFlags" -s "flaggedValue" -e "ts,tsx" [options...]
  *
- * Examples (forwarding extra Repomix options):
- *   pack -s "foo" -s "bar" -e "ts,tsx" --compress -o filtered.xml --style xml
+ * Examples:
+ *   packx -s "foo" -s "bar" -e "ts,tsx" --compress -o filtered.xml --style xml
  */
 
-import mri from "mri";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
+import { createWriteStream } from "node:fs";
 import { glob } from "glob";
 import { Minimatch } from "minimatch";
 import { checkbox } from "@inquirer/prompts";
+import pLimit from "p-limit";
+
+import { parseArgs, printHelp, type Argv } from "./cli.js";
 import {
+  parseCSV,
+  toExtSet,
+  normalizeStrings,
+  parseConfigFile,
+  getDefaultExtensions,
   isGitRepository,
   getGitStagedFiles,
   getGitDirtyFiles,
   getGitDiffFiles,
-  expandWithRelatedFiles,
+  expandWithRelatedFiles
 } from "./core.js";
-
-type Argv = mri.Argv & {
-  strings?: string | string[];
-  s?: string | string[];
-  "exclude-strings"?: string | string[];
-  S?: string | string[];
-  extensions?: string;
-  e?: string;
-  "exclude-extensions"?: string;
-  x?: string;
-  file?: string;
-  f?: string;
-  lines?: number;
-  l?: number;
-  prompt?: string | string[];
-  p?: string | string[];
-  "prompt-path"?: string | string[];
-  P?: string | string[];
-  "case-sensitive"?: boolean;
-  C?: boolean;
-  copy?: boolean;
-  c?: boolean;
-  preview?: boolean;
-  help?: boolean;
-  h?: boolean;
-  version?: boolean;
-  v?: boolean;
-  // Git-aware context flags
-  staged?: boolean;
-  diff?: boolean;
-  dirty?: boolean;
-  // Interactive selection
-  interactive?: boolean;
-  I?: boolean;
-  // Related files discovery
-  related?: boolean;
-  r?: boolean;
-};
-
-function printHelp() {
-  const txt = `
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                           PACKX - Smart File Filter                          ║
-║         Bundle only the files you need for focused AI analysis              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-OVERVIEW
-  Packx filters your repository files by content AND extension, then bundles 
-  only matching files for AI consumption. Perfect for providing focused context
-  to LLMs without overwhelming them with irrelevant code.
-
-USAGE
-  packx init [filename]                      Create a config file template
-  packx -s "string" [options] [repomix...]   Search and bundle files
-  packx -f config.txt [options] [repomix...] Use a config file
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                              QUICK START                                     │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-  1. Install packx:
-     npm install -g packx
-
-  2. Create a search config:
-     packx init my-search
-
-  3. Edit the config with your patterns:
-     nano my-search.ini
-
-  4. Run the search:
-     packx -f my-search.ini -o results.md
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                           COMMON USE CASES                                   │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-🔍 FIND ALL TODOS AND FIXMES
-  packx -s "TODO" -s "FIXME" -s "HACK" -s "XXX"
-  
-  This searches ALL common code files by default - no need to specify extensions!
-
-📦 BUNDLE REACT HOOKS FOR REVIEW
-  packx -s "useState" -s "useEffect" -s "useCallback" -e "tsx,jsx" -o hooks.md
-  
-  Focus on just React/JSX files containing hooks.
-
-🐛 DEBUG WITH CONTEXT LINES
-  packx -s "error" -s "exception" -l 20 --style markdown
-  
-  Extract only 20 lines around each error/exception - perfect for debugging!
-
-🔒 SECURITY AUDIT
-  packx -s "apiKey" -s "secret" -s "password" -s "token" \\
-        -e "js,ts,env,json" -x "test.js,spec.js" -o security.xml
-  
-  Find sensitive strings, excluding test files.
-
-📋 COPY TO CLIPBOARD
-  packx -s "console.log" --copy
-  packx -s "debugger" -c      # -c is shorthand for --copy
-  
-  Instantly copy results to clipboard for pasting into ChatGPT, Claude, etc.
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                          DETAILED EXAMPLES                                   │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. BASIC STRING SEARCH
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  # Single string search across all default extensions
-  packx -s "localStorage"
-  
-  # Multiple strings (files must contain at least ONE)
-  packx -s "fetch" -s "axios" -s "XMLHttpRequest"
-  
-  # Strings with special characters (no escaping needed!)
-  packx -s "array[index]" -s "obj.prop" -s "foo(bar, baz)"
-  packx -s "// TODO:" -s "/* FIXME" -s "@deprecated"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-2. EXTENSION FILTERING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  # Specific extensions (multiple formats supported)
-  packx -s "import" -e "ts,tsx"              # Comma-separated
-  packx -s "import" -e "ts" -e "tsx"         # Multiple flags
-  packx -s "import" -e ts -e tsx -e jsx      # No quotes needed
-  
-  # Exclude patterns (matched from end of filename)
-  packx -s "interface" -e "ts" -x "d.ts"     # Exclude .d.ts files
-  packx -s "test" -x "spec.ts" -x "test.ts"  # Exclude test files
-  packx -s "build" -x ".min.js" -x ".min.css" # Exclude minified
-  
-  # Exclude files containing specific strings
-  packx -s "useState" -S "test" -S "mock"    # Find useState, skip test/mock files
-  packx -s "API" -S "deprecated" -S "legacy" # Find API, skip deprecated/legacy
-  
-  # Case-sensitive search (default is case-insensitive)
-  packx -s "API" -C                          # Match API but not api or Api
-  packx -s "TODO" --case-sensitive           # Match TODO but not todo
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-3. CONTEXT LINES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  # Extract only N lines around each match (not entire files!)
-  packx -s "TODO" -l 5                    # 5 lines before & after
-  packx -s "error" -l 20 -o errors.md     # 20 lines of context
-  packx -s "FIXME" --lines 10             # Long form flag
-  
-  # Context windows are automatically merged when they overlap!
-  # If two TODOs are 3 lines apart with -l 5, you get one combined window
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-4. CONFIG FILES
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  # Create config templates
-  packx init                        # Creates pack-config.ini
-  packx init todos                  # Creates todos.ini
-  packx init team-search.config     # Keep custom extension if specified
-  
-  # Use config files
-  packx -f todos.txt
-  packx -f api-search.txt -o api.md
-  packx -f hooks.txt --style markdown --compress
-  
-  # Combine config with CLI args (CLI adds to config)
-  packx -f base.txt -s "extraSearch" -e "vue"
-
-  Example config file (todos.txt):
-  ────────────────────────────────
-  [search]
-  TODO
-  FIXME
-  HACK
-  XXX
-  NOTE
-  
-  [extensions]
-  # Leave empty for all defaults
-  # Or specify specific ones:
-  ts
-  tsx
-  js
-  jsx
-  
-  [exclude]
-  node_modules
-  .min.js
-  dist
-  build
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-5. OUTPUT OPTIONS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  # Different output formats
-  packx -s "API" --style markdown -o api.md
-  packx -s "API" --style xml -o api.xml
-  packx -s "API" --style plain -o api.txt
-  
-  # Copy to clipboard (multiple ways)
-  packx -s "bug" --copy              # Long form
-  packx -s "bug" -c                  # Short form
-  packx -s "bug" -l 10 -c            # With context + copy
-  
-  # Preview mode (just list files, no bundling)
-  packx -s "deprecated" --preview
-  packx -s "legacy" -e "js" --preview
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-6. REPOMIX INTEGRATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  # All Repomix flags pass through automatically
-  packx -s "class" --compress --remove-comments
-  packx -s "function" --token-count-tree
-  packx -s "import" --instruction-file-path ./instructions.md
-  
-  # Complex Repomix examples
-  packx -s "useState" -e "tsx" \\
-        --compress \\
-        --style markdown \\
-        --remove-comments \\
-        --token-count-tree \\
-        -o react-analysis.md
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                           REAL-WORLD WORKFLOWS                               │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-📱 REACT NATIVE DEBUGGING
-  # Find all state management issues
-  packx -s "setState" -s "useState" -s "redux" -s "mobx" \\
-        -e "tsx,jsx" -l 30 -o state-debug.md
-  
-  # Find navigation problems
-  packx -s "navigation" -s "navigate" -s "route" \\
-        -e "tsx" -x "test.tsx" --compress
-
-🔧 REFACTORING PREPARATION
-  # Find all deprecated patterns
-  packx -s "componentWillMount" -s "componentWillReceiveProps" \\
-        -s "componentWillUpdate" -e "jsx,tsx" -o deprecated.md
-  
-  # Find all console.logs to remove
-  packx -s "console.log" -s "console.debug" \\
-        -x "test.js" --preview
-
-🏗️ ARCHITECTURE REVIEW
-  # Find all API endpoints
-  packx -s "/api/" -s "fetch(" -s "axios" -s ".get(" -s ".post(" \\
-        -e "ts,tsx,js" -o api-surface.md
-  
-  # Find all database queries
-  packx -s "SELECT" -s "INSERT" -s "UPDATE" -s "DELETE" \\
-        -s "mongodb" -s "mongoose" -o database-layer.md
-
-🧪 TEST COVERAGE ANALYSIS
-  # Find untested functions
-  packx -s "export function" -s "export const" -e "ts" \\
-        -x "test.ts" -x "spec.ts" -o possibly-untested.md
-  
-  # Find all test files
-  packx -s "describe(" -s "test(" -s "it(" \\
-        -e "test.ts,spec.ts,test.js,spec.js" -o all-tests.md
-
-🚀 PERFORMANCE OPTIMIZATION
-  # Find potential performance issues
-  packx -s "forEach" -s "map" -s "filter" -s "reduce" \\
-        -s "for (" -s "while (" -l 20 -o loops-analysis.md
-
-  # Find all async operations
-  packx -s "async" -s "await" -s "Promise" -s "then(" \\
-        -e "ts,tsx" -l 30 --compress
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                         GIT-AWARE WORKFLOWS                                  │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-📝 REVIEW STAGED CHANGES (Perfect for PR descriptions)
-  # Bundle only files staged for commit
-  packx --staged --copy
-
-  # Staged changes with search filter
-  packx --staged -s "TODO" -l 10 -c
-
-🔧 WORK-IN-PROGRESS MODE
-  # Bundle files changed in current branch vs main
-  packx --diff -c
-
-  # Bundle all dirty (modified + untracked) files
-  packx --dirty --style markdown -o wip.md
-
-🎯 INTERACTIVE FILE SELECTION
-  # Search, then interactively select which files to bundle
-  packx -s "useState" -I
-
-  # Combine with other filters for refined selection
-  packx -s "API" -e "ts,tsx" -I --copy
-
-🔗 RELATED FILES DISCOVERY
-  # When bundling Button.tsx, also include Button.test.tsx, Button.css, etc.
-  packx src/components/Button.tsx -r
-
-  # Combine with git-aware context
-  packx --staged -r -c
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                              OPTIONS REFERENCE                               │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-PACKX OPTIONS
-  -s, --strings STRING        Search string (use multiple times)
-  -S, --exclude-strings       Exclude files containing these strings
-  -e, --extensions EXTS       Include only these extensions (comma-separated)
-  -x, --exclude-extensions    Exclude these patterns (matched from end)
-  -f, --file PATH            Read configuration from file
-  -l, --lines NUMBER         Context lines around matches (default: entire file)
-  -p, --prompt TEXT         Append a Markdown prompt at end of output
-      --prompt-path PATH    Append contents of file as a prompt
-  -C, --case-sensitive       Make search case-sensitive (default: case-insensitive)
-      --preview              List matched files without bundling
-  -h, --help                 Show this help message
-  -v, --version              Show version number
-
-GIT-AWARE CONTEXT (Work-in-Progress Mode)
-      --staged               Bundle only files staged for commit
-      --diff                 Bundle files changed vs main/master branch
-      --dirty                Bundle modified + untracked files in working tree
-
-INTERACTIVE & RELATED FILES
-  -I, --interactive          Interactively select files from matches
-  -r, --related              Include related files (tests, styles, stories)
-
-REPOMIX PASSTHROUGH OPTIONS
-  -o, --output PATH          Output file path (default: repomix-output.xml)
-      --style FORMAT         Output format: xml, markdown, plain
-      --compress             Compress output for smaller size
-  -c, --copy                 Copy output to clipboard
-      --remove-comments      Strip comments from code
-      --token-count-tree     Show token count statistics
-      --instruction-file-path  Custom instructions file
-  
-  (All other Repomix flags are automatically passed through)
-
-DEFAULT EXTENSIONS
-  When -e is not specified, packx searches ALL of these by default:
-  
-  • Languages: js, jsx, ts, tsx, mjs, cjs, py, rb, go, java, cpp, c, h,
-               rs, swift, kt, scala, php
-  • Frameworks: vue, svelte, astro
-  • Styles: css, scss, less
-  • Config: json, yaml, yml, toml, xml
-  • Docs: md, mdx, txt
-  • Scripts: sh, bash, zsh, fish
-  • Data: sql, graphql, gql
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                              TIPS & TRICKS                                   │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-💡 PRO TIPS
-
-  1. Use --preview first to verify your search:
-     packx -s "password" --preview
-     # Check the file list, then run without --preview
-
-  2. Combine multiple patterns for OR logic:
-     packx -s "error" -s "exception" -s "fail" -s "crash"
-     # Finds files with ANY of these strings
-
-  3. Use config files for team sharing:
-     # Create standard searches for your team
-     packx init team-standards.txt
-     git add team-standards.txt
-     git commit -m "Add team search patterns"
-
-  4. Context lines for token optimization:
-     # Instead of sending entire files to AI:
-     packx -s "bug" -l 20    # Just 20 lines around bugs
-     packx -s "TODO" -l 5    # Minimal context for TODOs
-
-  5. Quick clipboard for AI chats:
-     # Search and instantly copy for ChatGPT/Claude
-     packx -s "function calculatePrice" -l 50 -c
-     # Now just paste into your AI chat!
-
-⚠️ COMMON PITFALLS
-
-  • Don't use dots in extensions: use "ts" not ".ts"
-  • Search is case-insensitive by default (use -C for case-sensitive)
-  • Use quotes for special chars in shell: -s "foo()"
-  • Large repos: use -e to limit extensions: -e "ts,tsx"
-  • -x matches from END: "d.ts" matches "*.d.ts" files
-
-📊 PERFORMANCE NOTES
-
-  • Packx uses ripgrep-like algorithms for speed
-  • .gitignore patterns are respected automatically
-  • Binary files are skipped automatically
-  • Files > 10MB are skipped for safety
-  • Use --preview to estimate before processing
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                               ABOUT PACKX                                    │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-  Version: v1.4.1
-  Author: John Lindquist
-  License: MIT
-  Repository: https://github.com/johnlindquist/pack
-  
-  Packx is a smart wrapper around Repomix that filters files BEFORE bundling,
-  ensuring you only package what you need. Perfect for focused AI analysis,
-  code reviews, debugging sessions, and codebase exploration.
-
-  Report issues: https://github.com/johnlindquist/pack/issues
-  Star if useful: https://github.com/johnlindquist/pack ⭐
-
-`;
-  process.stdout.write(txt);
-}
-
-function parseCSV(input?: string): string[] {
-  if (!input) return [];
-  return input
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function toExtSet(exts: string[]): Set<string> {
-  const s = new Set<string>();
-  for (const e of exts) {
-    const dot = e.startsWith(".") ? e.toLowerCase() : `.${e.toLowerCase()}`;
-    s.add(dot);
-  }
-  return s;
-}
-
-function escRegex(lit: string): string {
-  // Escape regex-special chars for safe substring search
-  return lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-// Context extraction types and functions
-type MatchPosition = {
-  line: number;
-  column: number;
-  match: string;
-};
-
-type ContextWindow = {
-  startLine: number;
-  endLine: number;
-  lines: string[];
-  matches: MatchPosition[];
-};
-
-function findAllMatches(content: string, pattern: RegExp): MatchPosition[] {
-  const lines = content.split('\n');
-  const matches: MatchPosition[] = [];
-  
-  lines.forEach((line, lineIndex) => {
-    let match;
-    const linePattern = new RegExp(pattern.source, pattern.flags.replace('g', '') + 'g');
-    while ((match = linePattern.exec(line)) !== null) {
-      matches.push({
-        line: lineIndex + 1, // 1-based line numbers
-        column: match.index,
-        match: match[0]
-      });
-    }
-  });
-  
-  return matches;
-}
-
-function extractContextWindows(
-  content: string, 
-  pattern: RegExp, 
-  contextLines: number
-): ContextWindow[] {
-  const lines = content.split('\n');
-  const matches = findAllMatches(content, pattern);
-  
-  if (matches.length === 0) return [];
-  
-  // Create initial windows
-  const windows: ContextWindow[] = [];
-  
-  for (const match of matches) {
-    const startLine = Math.max(1, match.line - contextLines);
-    const endLine = Math.min(lines.length, match.line + contextLines);
-    
-    windows.push({
-      startLine,
-      endLine,
-      lines: lines.slice(startLine - 1, endLine),
-      matches: [match]
-    });
-  }
-  
-  // Merge overlapping windows
-  const merged: ContextWindow[] = [];
-  let current: ContextWindow | null = null;
-  
-  for (const window of windows) {
-    if (!current) {
-      current = window;
-    } else if (window.startLine <= current.endLine + 1) {
-      // Merge windows
-      current.endLine = Math.max(current.endLine, window.endLine);
-      current.lines = lines.slice(current.startLine - 1, current.endLine);
-      current.matches.push(...window.matches);
-    } else {
-      // Start new window
-      merged.push(current);
-      current = window;
-    }
-  }
-  
-  if (current) {
-    merged.push(current);
-  }
-  
-  return merged;
-}
-
-function formatContextWindows(windows: ContextWindow[], filePath: string): string {
-  if (windows.length === 0) return '';
-  
-  let output = '';
-  for (const window of windows) {
-    // Add separator between windows
-    if (output) {
-      output += '\n  ...\n';
-    }
-    
-    // Add lines with line numbers
-    window.lines.forEach((line, index) => {
-      const lineNum = window.startLine + index;
-      output += `${String(lineNum).padStart(6, ' ')}│ ${line}\n`;
-    });
-  }
-  
-  return output;
-}
-
-async function fileContainsAnyStrings(absPath: string, pattern?: RegExp | null, excludePattern?: RegExp | null): Promise<boolean> {
-  try {
-    const stat = await fs.stat(absPath);
-    // Skip extremely large files (> 10MB) as a guard (Repomix ignores most binaries anyway)
-    if (stat.size > 10 * 1024 * 1024) return false;
-
-    const buf = await fs.readFile(absPath, "utf8");
-    
-    // First check if file contains excluded strings
-    if (excludePattern && excludePattern.test(buf)) {
-      return false;
-    }
-    
-    // Then check if file contains required strings (if provided)
-    return pattern ? pattern.test(buf) : true;
-  } catch {
-    return false;
-  }
-}
-
-function buildRepomixPassthroughArgs(parsed: Argv): string[] {
-  const passthrough: string[] = [];
-  const reserved = new Set([
-    "_",
-    "strings",
-    "exclude-strings",
-    "extensions",
-    "exclude-extensions",
-    "file",
-    "lines",
-    "prompt",
-    "prompt-path",
-    "include",
-    "ignore",
-    "i",
-    "case-sensitive",
-    "copy",
-    "c",
-    "s",
-    "S",
-    "e",
-    "x",
-    "f",
-    "l",
-    "p",
-    "P",
-    "C",
-    "stdout",
-    "preview",
-    "help",
-    "h",
-    "version",
-    "v",
-  ]);
-
-  for (const [key, val] of Object.entries(parsed)) {
-    if (reserved.has(key)) continue;
-    if (val === undefined) continue;
-
-    const flag = key.length === 1 ? `-${key}` : `--${key}`;
-
-    if (Array.isArray(val)) {
-      for (const v of val) {
-        if (typeof v === "boolean") {
-          if (v) passthrough.push(flag);
-        } else {
-          passthrough.push(flag, String(v));
-        }
-      }
-    } else if (typeof val === "boolean") {
-      if (val) passthrough.push(flag);
-    } else {
-      passthrough.push(flag, String(val));
-    }
-  }
-
-  return passthrough;
-}
-
-// Normalize strings to array
-function normalizeStrings(value: string | string[] | undefined): string[] {
-  if (!value) return [];
-  if (Array.isArray(value)) return value;
-  return [value];
-}
-
-// Parse config file
-async function parseConfigFile(filePath: string): Promise<{
-  search: string[];
-  extensions: string[];
-  exclude: string[];
-}> {
-  const config = {
-    search: [] as string[],
-    extensions: [] as string[],
-    exclude: [] as string[]
-  };
-
-  try {
-    const content = await fs.readFile(filePath, 'utf8');
-    const lines = content.split('\n');
-    let currentSection: 'search' | 'extensions' | 'exclude' | null = null;
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      
-      // Skip empty lines and comments
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      
-      // Check for section headers
-      if (trimmed === '[search]' || trimmed === '[strings]') {
-        currentSection = 'search';
-        continue;
-      }
-      if (trimmed === '[extensions]' || trimmed === '[include]') {
-        currentSection = 'extensions';
-        continue;
-      }
-      if (trimmed === '[exclude]' || trimmed === '[exclude-extensions]' || trimmed === '[ignore]') {
-        currentSection = 'exclude';
-        continue;
-      }
-      
-      // Add line to current section
-      if (currentSection) {
-        config[currentSection].push(trimmed);
-      }
-    }
-    
-    return config;
-  } catch (error) {
-    console.error(`Error reading config file: ${filePath}`);
-    if (error instanceof Error) {
-      console.error(error.message);
-    }
-    process.exit(1);
-  }
-}
+import { buildPattern, extractContextWindows, formatContextWindows } from "./context.js";
+import { scanDirectory, filterByContent, loadGitignore, hasGlobChars, expandPattern, DEFAULT_IGNORE_PATTERNS } from "./scanner.js";
+import { countTokens, isBinaryFile, formatTokenCount, getTokenWarning } from "./analysis.js";
+import { StreamFormatter, StringBufferStream, type OutputStyle } from "./formatter.js";
+
+const CONCURRENCY_LIMIT = 50;
 
 async function createConfigTemplate(filename: string = 'pack-config.ini') {
   const template = `# Pack configuration file
@@ -741,7 +64,7 @@ async function createConfigTemplate(filename: string = 'pack-config.ini') {
 # Examples:
 # *.d.ts              # All TypeScript declaration files
 # *.test.ts           # All test files
-# *.spec.ts           # All spec files  
+# *.spec.ts           # All spec files
 # *.min.js            # All minified JS files
 # docs/               # Docs directory
 # site/               # Site directory
@@ -752,7 +75,6 @@ async function createConfigTemplate(filename: string = 'pack-config.ini') {
 `;
 
   try {
-    // Check if file already exists
     try {
       await fs.access(filename);
       console.error(`❌ File '${filename}' already exists. Use a different name or delete the existing file.`);
@@ -761,27 +83,24 @@ async function createConfigTemplate(filename: string = 'pack-config.ini') {
       // File doesn't exist, proceed
     }
 
-    // Check if directory exists, create if needed
     const dir = path.dirname(filename);
     if (dir && dir !== '.' && dir !== '') {
       try {
         await fs.access(dir);
       } catch {
-        // Directory doesn't exist, prompt user
         console.log(`📁 Directory '${dir}' does not exist.`);
-        
-        // Import readline for user input
+
         const readline = await import('readline');
         const rl = readline.createInterface({
           input: process.stdin,
           output: process.stdout
         });
-        
+
         const answer = await new Promise<string>((resolve) => {
           rl.question('Would you like to create it? (y/n): ', resolve);
         });
         rl.close();
-        
+
         if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
           await fs.mkdir(dir, { recursive: true });
           console.log(`✅ Created directory: ${dir}`);
@@ -806,68 +125,23 @@ async function main() {
   // Check for init command first
   if (process.argv[2] === 'init') {
     let filename = process.argv[3] || 'pack-config.ini';
-    
-    // Add .ini extension if no extension provided
+
     if (filename && !path.extname(filename)) {
       filename = `${filename}.ini`;
     }
-    
+
     await createConfigTemplate(filename);
     process.exit(0);
   }
 
-  // Parse with aliases properly configured
-  const parsed = mri(process.argv.slice(2), {
-    alias: {
-      s: "strings",
-      S: "exclude-strings",
-      e: "extensions",
-      x: "exclude-extensions",
-      f: "file",
-      l: "lines",
-      p: "prompt",
-      P: "prompt-path",
-      C: "case-sensitive",
-      c: "copy",
-      h: "help",
-      v: "version",
-      I: "interactive",
-      r: "related"
-    },
-    string: [
-      "strings", "s",
-      "exclude-strings", "S",
-      "extensions", "e",
-      "exclude-extensions", "x",
-      "file", "f",
-      "prompt", "p",
-      "prompt-path", "P",
-      "include",
-      "ignore", "i"
-    ],
-    boolean: [
-      "case-sensitive", "C",
-      "preview",
-      "copy", "c",
-      "help", "h",
-      "version", "v",
-      "stdout",
-      // Git-aware context
-      "staged",
-      "diff",
-      "dirty",
-      // Interactive & related
-      "interactive", "I",
-      "related", "r"
-    ]
-  }) as Argv;
+  const parsed = parseArgs(process.argv.slice(2));
 
   if (parsed.help || parsed.h) {
     printHelp();
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.1.2");
+    console.log("packx v3.4.0");
     process.exit(0);
   }
 
@@ -876,8 +150,10 @@ async function main() {
   let extensions: Set<string>;
   let excludePatterns: string[] = [];
   const caseSensitive = parsed["case-sensitive"] || parsed.C || false;
-  
-  // Repomix-style include/ignore patterns (post-filtered via Minimatch on relative paths)
+  const useRegex = parsed.regex || parsed.R || false;
+  const smartContext = Boolean((parsed as any)["smart-context"]);
+
+  // Parse include/ignore patterns
   function toArray(val: any): string[] {
     if (!val) return [];
     return Array.isArray(val) ? val.map(String) : [String(val)];
@@ -887,41 +163,12 @@ async function main() {
   const ignoreRaw = toArray((parsed as any).ignore || (parsed as any).i);
   const ignoreList = ignoreRaw.flatMap(v => parseCSV(v));
 
-  function hasGlobChars(s: string): boolean {
-    return /[\*\?\[\]\{\}!]/.test(s);
-  }
-  function expandPattern(p: string, forInclude = true): string[] {
-    // If pattern already has glob characters, keep as-is
-    if (hasGlobChars(p)) return [p];
-
-    // Normalize path separators to POSIX style for matching
-    let norm = p.replace(/\\/g, '/');
-
-    // Preserve hidden names like ".claude". Only strip a leading "./".
-    if (norm.startsWith('./')) {
-      norm = norm.slice(2);
-    }
-
-    // Do not strip a single leading '.' (hidden files/dirs) or '../'
-    // Do not strip a leading '/' (absolute path) either
-
-    const patterns: string[] = [];
-    // exact path at root (or absolute, if provided)
-    patterns.push(norm);
-    // any file/dir named norm anywhere
-    patterns.push(`**/${norm}`);
-    // any path under a directory named norm at root
-    patterns.push(`${norm}/**`);
-    // any path under a directory named norm anywhere
-    patterns.push(`**/${norm}/**`);
-    return Array.from(new Set(patterns));
-  }
-
-  // Classify positional args into roots, files, and globs
+  // Classify positional args
   const positionalArgs: string[] = (parsed._ as any[] || []).map(String);
   const positionalRoots: string[] = [];
   const positionalFileIncludes: string[] = [];
   const positionalGlobIncludes: string[] = [];
+
   for (const arg of positionalArgs) {
     if (!arg) continue;
     if (hasGlobChars(arg)) {
@@ -938,7 +185,7 @@ async function main() {
     }
   }
 
-  // Combine CLI includes with positional globs and explicit files (as relative patterns)
+  // Combine includes
   const positionalFilePatterns = positionalFileIncludes
     .map((abs) => path.relative(process.cwd(), abs).replace(/\\/g, '/'));
   const combinedIncludeList = [
@@ -947,51 +194,46 @@ async function main() {
     ...positionalFilePatterns,
   ];
 
-  const includeExpanded = combinedIncludeList.flatMap(p => expandPattern(p, true));
-  const ignoreExpanded = ignoreList.flatMap(p => expandPattern(p, false));
-  // Split include patterns into absolute and relative for correct matching context
+  const includeExpanded = combinedIncludeList.flatMap(p => expandPattern(p));
+  const ignoreExpanded = ignoreList.flatMap(p => expandPattern(p));
+
   const includeExpandedAbs = includeExpanded.filter((p) => path.isAbsolute(p));
   const includeExpandedRel = includeExpanded.filter((p) => !path.isAbsolute(p));
   const includeMatchersAbs = includeExpandedAbs.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
   const includeMatchersRel = includeExpandedRel.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
   const ignoreMatchers = ignoreExpanded.map(p => new Minimatch(p, { dot: true, nocase: !caseSensitive, noglobstar: false }));
 
-  // Check if config file is provided
+  // Parse config file or CLI args
   const configFile = parsed.file || parsed.f;
   if (configFile) {
     const config = await parseConfigFile(configFile);
     strings = config.search;
     extensions = toExtSet(config.extensions);
-    excludePatterns = config.exclude;  // Treat all excludes as gitignore patterns
-    
-    // Allow command-line args to add to config file values
+    excludePatterns = config.exclude;
+
     strings.push(...normalizeStrings(parsed.strings));
     strings.push(...normalizeStrings(parsed.s));
-    
-    // Collect exclude strings from CLI
+
     excludeStrings = [
       ...normalizeStrings(parsed["exclude-strings"]),
       ...normalizeStrings(parsed.S)
     ].filter(Boolean);
-    
+
     const cliExtensions = parsed.extensions || parsed.e;
-    const cliExtList = Array.isArray(cliExtensions) 
+    const cliExtList = Array.isArray(cliExtensions)
       ? cliExtensions.flatMap(v => parseCSV(String(v)))
       : parseCSV(cliExtensions);
     for (const ext of toExtSet(cliExtList)) {
       extensions.add(ext);
     }
-    
-    // Handle CLI exclude patterns
+
     const cliExclude = parsed["exclude-extensions"] || parsed.x;
     const cliExcludeList = Array.isArray(cliExclude)
       ? cliExclude.flatMap(v => parseCSV(String(v)))
       : parseCSV(cliExclude);
-    
-    // Convert extensions to gitignore patterns
+
     for (const excl of cliExcludeList) {
       if (excl) {
-        // If it looks like an extension, convert to gitignore pattern
         if (!excl.includes('/') && !excl.includes('*')) {
           excludePatterns.push(`**/*.${excl.replace(/^\./, '')}`);
         } else {
@@ -1000,35 +242,29 @@ async function main() {
       }
     }
   } else {
-    // Collect all strings from multiple -s flags
     strings = [
       ...normalizeStrings(parsed.strings),
       ...normalizeStrings(parsed.s)
     ].filter(Boolean);
 
-    // Collect exclude strings from -S flags
     excludeStrings = [
       ...normalizeStrings(parsed["exclude-strings"]),
       ...normalizeStrings(parsed.S)
     ].filter(Boolean);
 
-    // Handle both single string and array of strings for extensions
     const extensionValues = parsed.extensions || parsed.e;
-    const extensionsList = Array.isArray(extensionValues) 
+    const extensionsList = Array.isArray(extensionValues)
       ? extensionValues.flatMap(v => parseCSV(String(v)))
       : parseCSV(extensionValues);
     extensions = toExtSet(extensionsList);
 
-    // Handle exclude patterns from CLI
     const excludeValues = parsed["exclude-extensions"] || parsed.x;
     const excludeList = Array.isArray(excludeValues)
       ? excludeValues.flatMap(v => parseCSV(String(v)))
       : parseCSV(excludeValues);
-    
-    // Convert to gitignore patterns
+
     for (const excl of excludeList) {
       if (excl) {
-        // If it looks like an extension, convert to gitignore pattern
         if (!excl.includes('/') && !excl.includes('*')) {
           excludePatterns.push(`**/*.${excl.replace(/^\./, '')}`);
         } else {
@@ -1040,45 +276,23 @@ async function main() {
 
   strings = strings.filter(Boolean);
 
-  // If no extensions specified, use common defaults
   if (!extensions.size) {
-    extensions = toExtSet([
-      'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs',
-      'py', 'rb', 'go', 'java', 'cpp', 'c', 'h',
-      'rs', 'swift', 'kt', 'scala', 'php',
-      'vue', 'svelte', 'astro',
-      'css', 'scss', 'less',
-      'json', 'yaml', 'yml', 'toml', 'xml',
-      'md', 'mdx', 'txt',
-      'sh', 'bash', 'zsh', 'fish',
-      'sql', 'graphql', 'gql'
-    ]);
+    extensions = getDefaultExtensions();
   }
 
-  // If no search strings are provided, behave like a repomix wrapper: select by extensions only
-
   const roots = positionalRoots.length ? positionalRoots : ["."];
-  const regexFlags = caseSensitive ? "" : "i";
-  const pattern: RegExp | null = strings.length > 0
-    ? new RegExp(strings.map(escRegex).join("|"), regexFlags)
-    : null;
-  const excludePattern: RegExp | null = excludeStrings.length > 0
-    ? new RegExp(excludeStrings.map(escRegex).join("|"), regexFlags)
-    : null;
+  const pattern = buildPattern(strings, caseSensitive, useRegex);
+  const excludePattern = buildPattern(excludeStrings, caseSensitive, useRegex);
 
-  // Check for git-aware context flags
+  // Git-aware context
   const useGitStaged = Boolean(parsed.staged);
   const useGitDiff = Boolean(parsed.diff);
   const useGitDirty = Boolean(parsed.dirty);
   const useGitContext = useGitStaged || useGitDiff || useGitDirty;
 
-  // 1) Discover files (respecting .gitignore) under each root
+  // Discover files
   const candidates = new Set<string>();
-  // Track include pattern stats for diagnostics and preview
-  const includePatternCounts = new Map<string, number>();
-  const includePatternSamples = new Map<string, string[]>();
 
-  // Git-aware context: use git to determine files instead of glob
   if (useGitContext) {
     const isGitRepo = await isGitRepository();
     if (!isGitRepo) {
@@ -1112,11 +326,10 @@ async function main() {
 
     console.log(`📁 Found ${gitFiles.length} file(s) from git`);
 
-    // Filter git files by extension if specified
+    // Filter by extension
     for (const file of gitFiles) {
       const ext = path.extname(file).toLowerCase();
       if (extensions.size === 0 || extensions.has(ext)) {
-        // Also check exclude patterns
         const rel = path.relative(process.cwd(), file).replace(/\\/g, '/');
         let excluded = false;
         for (const ep of excludePatterns) {
@@ -1131,139 +344,79 @@ async function main() {
       }
     }
   } else {
-    // Standard file discovery via glob
+    // Standard file discovery with .gitignore support
     for (const root of roots) {
-    const absRoot = path.resolve(root);
-    
-    // Build glob patterns for each extension
-    const patterns: string[] = [];
-    for (const ext of extensions) {
-      const cleanExt = ext.startsWith('.') ? ext.slice(1) : ext;
-      patterns.push(`**/*.${cleanExt}`);
-    }
-    
-    for (const pattern of patterns) {
-      const files = await glob(pattern, {
-        cwd: absRoot,
-        ignore: [
-          '**/node_modules/**',
-          '**/.git/**',
-          '**/dist/**',
-          '**/build/**',
-          '**/.next/**',
-          '**/coverage/**',
-          '**/.cache/**',
-          '**/tmp/**',
-          '**/temp/**',
-          '**/*.log',
-          '**/.DS_Store',
-          '**/Thumbs.db',
-          // Lockfiles - typically not useful for LLM context
-          '**/package-lock.json',
-          '**/yarn.lock',
-          '**/pnpm-lock.yaml',
-          '**/bun.lockb',
-          '**/bun.lock',
-          '**/Gemfile.lock',
-          '**/Cargo.lock',
-          '**/poetry.lock',
-          '**/Pipfile.lock',
-          '**/composer.lock',
-          ...excludePatterns  // Add user-defined exclude patterns
-        ],
-        absolute: true,
-        dot: false,
-        nodir: true
-      });
-      
-      for (const file of files) {
-        // Accumulate; include/ignore filtering applied after discovery
-        candidates.add(file);
-      }
-    }
+      const absRoot = path.resolve(root);
+      const gitignore = await loadGitignore(absRoot);
 
-    // Also discover by include patterns (positional or --include)
-    if (includeExpanded.length > 0) {
-      for (const inc of includeExpanded) {
-        try {
-          const isAbs = path.isAbsolute(inc);
-          const files = await glob(inc, {
-            cwd: isAbs ? undefined : absRoot,
-            ignore: [
-              '**/node_modules/**',
-              '**/.git/**',
-              '**/dist/**',
-              '**/build/**',
-              '**/.next/**',
-              '**/coverage/**',
-              '**/.cache/**',
-              '**/tmp/**',
-              '**/temp/**',
-              '**/*.log',
-              '**/.DS_Store',
-              '**/Thumbs.db',
-              // Lockfiles - typically not useful for LLM context
-              '**/package-lock.json',
-              '**/yarn.lock',
-              '**/pnpm-lock.yaml',
-              '**/bun.lockb',
-              '**/bun.lock',
-              '**/Gemfile.lock',
-              '**/Cargo.lock',
-              '**/poetry.lock',
-              '**/Pipfile.lock',
-              '**/composer.lock'
-            ],
-            absolute: true,
-            dot: false,
-            nodir: true,
-          });
-          // Track stats per include pattern
-          includePatternCounts.set(inc, (includePatternCounts.get(inc) || 0) + files.length);
-          if (files.length > 0) {
-            const current = includePatternSamples.get(inc) || [];
-            const remaining = Math.max(0, 10 - current.length);
-            const toAdd = files.slice(0, remaining);
-            includePatternSamples.set(inc, [...current, ...toAdd]);
+      // Build glob patterns
+      const patterns: string[] = [];
+      for (const ext of extensions) {
+        const cleanExt = ext.startsWith('.') ? ext.slice(1) : ext;
+        patterns.push(`**/*.${cleanExt}`);
+      }
+
+      const allIgnores = [...DEFAULT_IGNORE_PATTERNS, ...excludePatterns];
+
+      for (const pat of patterns) {
+        const files = await glob(pat, {
+          cwd: absRoot,
+          ignore: allIgnores,
+          absolute: true,
+          dot: false,
+          nodir: true
+        });
+
+        for (const file of files) {
+          const relPath = path.relative(absRoot, file);
+          if (!gitignore.ignores(relPath)) {
+            candidates.add(file);
           }
-          for (const f of files) candidates.add(f);
-        } catch {
-          // ignore invalid patterns
+        }
+      }
+
+      // Include pattern discovery
+      if (includeExpanded.length > 0) {
+        for (const inc of includeExpanded) {
+          try {
+            const isAbs = path.isAbsolute(inc);
+            const files = await glob(inc, {
+              cwd: isAbs ? undefined : absRoot,
+              ignore: allIgnores,
+              absolute: true,
+              dot: false,
+              nodir: true,
+            });
+            for (const f of files) candidates.add(f);
+          } catch {
+            // ignore invalid patterns
+          }
         }
       }
     }
   }
-  } // End of else block for standard file discovery
 
-  // Include explicit file paths provided positionally (not in git mode)
+  // Include explicit files
   if (!useGitContext) {
     for (const f of positionalFileIncludes) candidates.add(f);
   }
 
   if (!candidates.size) {
-    // Provide helpful diagnostics when include patterns are used
-    if (includeExpanded.length > 0) {
-      const zeroPatterns = includeExpanded.filter(p => (includePatternCounts.get(p) || 0) === 0);
-      if (zeroPatterns.length > 0) {
-        console.warn("⚠️  No files found. The following include patterns had zero matches:");
-        for (const ptn of zeroPatterns) console.warn(`  - ${ptn}`);
-      } else {
-        console.warn("⚠️  No files found with the specified extensions in the given roots.");
-      }
-    } else {
-      console.warn("⚠️  No files found with the specified extensions in the given roots.");
-    }
+    console.warn("⚠️  No files found with the specified extensions in the given roots.");
     process.exit(2);
   }
 
-  // Apply include/ignore matchers on repo-relative paths
-  const filteredCandidates: string[] = [];
+  // Apply include/ignore matchers
+  let filteredCandidates: string[] = [];
   const explicitSet = new Set(positionalFileIncludes);
   const explicitOnly = positionalFileIncludes.length > 0;
+
   for (const p of candidates) {
     const rel = path.relative(process.cwd(), p).replace(/\\/g, '/');
     const absPosix = p.replace(/\\/g, '/');
+
     if (explicitOnly && !explicitSet.has(p)) continue;
+
     if (!explicitOnly) {
       const hasIncludeFilters = (includeMatchersAbs.length + includeMatchersRel.length) > 0;
       if (hasIncludeFilters) {
@@ -1272,110 +425,100 @@ async function main() {
         if (!(matchRel || matchAbs)) continue;
       }
     }
+
     if (ignoreMatchers.length && ignoreMatchers.some(mm => mm.match(rel))) continue;
     filteredCandidates.push(p);
   }
 
-  // 2) Content filter (or pass-through if no strings)
+  // Filter by content in parallel
   const matched: string[] = [];
   const foundExtensions = new Set<string>();
-  
-  if (!pattern) {
-    // No include strings: include all candidates unless they match exclude strings
-    for (const p of filteredCandidates) {
-      if (excludePattern) {
+  const limit = pLimit(CONCURRENCY_LIMIT);
+
+  const results = await Promise.all(
+    filteredCandidates.map(p =>
+      limit(async () => {
         try {
           const stat = await fs.stat(p);
-          if (stat.size > 10 * 1024 * 1024) continue; // safety: skip huge files
-          const buf = await fs.readFile(p, 'utf8');
-          if (excludePattern.test(buf)) continue;
-        } catch { continue; }
-      }
-      const resolvedPath = path.resolve(p);
-      matched.push(resolvedPath);
-      const ext = path.extname(resolvedPath).toLowerCase();
+          if (stat.size > 10 * 1024 * 1024) return null;
+          if (await isBinaryFile(p)) return null;
+
+          const content = await fs.readFile(p, 'utf8');
+
+          if (excludePattern && excludePattern.test(content)) {
+            return null;
+          }
+
+          if (!pattern || pattern.test(content)) {
+            return p;
+          }
+
+          return null;
+        } catch {
+          return null;
+        }
+      })
+    )
+  );
+
+  for (const p of results) {
+    if (p) {
+      matched.push(p);
+      const ext = path.extname(p).toLowerCase();
       if (ext) foundExtensions.add(ext);
     }
-  } else {
-    for (const p of filteredCandidates) {
-      if (await fileContainsAnyStrings(p, pattern, excludePattern)) {
-        const resolvedPath = path.resolve(p);
-        matched.push(resolvedPath);
-        const ext = path.extname(resolvedPath).toLowerCase();
-        if (ext) {
-          foundExtensions.add(ext);
-        }
-      }
-    }
   }
 
-  // Interactive selection mode: let user pick which files to include
+  // Interactive selection
   const wantInteractive = Boolean(parsed.interactive || parsed.I);
-  if (wantInteractive && matched.length > 0) {
-    const cwd = process.cwd();
+  if (wantInteractive && matched.length > 0 && process.stdin.isTTY) {
+    console.log(`\n🎯 Interactive mode: Select files to include (${matched.length} matched)\n`);
 
-    // Check if running in a TTY (interactive terminal)
-    if (!process.stdin.isTTY) {
-      console.warn("⚠️  Interactive mode (-I) requires a terminal. Skipping selection.");
-    } else {
-      console.log(`\n🎯 Interactive mode: Select files to include (${matched.length} matched)\n`);
-
-      try {
-        const choices = matched.map((file) => {
-          const rel = path.relative(cwd, file);
-          // Get file size for display
-          let sizeStr = "";
-          try {
-            const stat = require("fs").statSync(file);
-            const kb = Math.round(stat.size / 1024);
-            sizeStr = kb > 0 ? ` (${kb}KB)` : " (<1KB)";
-          } catch {
-            // ignore
-          }
-          return {
-            name: `${rel}${sizeStr}`,
-            value: file,
-            checked: true, // Pre-select all by default
-          };
-        });
-
-        const selected = await checkbox({
-          message: "Select files to bundle:",
-          choices,
-          pageSize: 20,
-        });
-
-        if (selected.length === 0) {
-          console.log("\n⚠️  No files selected. Exiting.");
-          process.exit(0);
+    try {
+      const choices = matched.map((file) => {
+        const rel = path.relative(process.cwd(), file);
+        let sizeStr = "";
+        try {
+          const stat = require("fs").statSync(file);
+          const kb = Math.round(stat.size / 1024);
+          sizeStr = kb > 0 ? ` (${kb}KB)` : " (<1KB)";
+        } catch {
+          // ignore
         }
+        return { name: `${rel}${sizeStr}`, value: file, checked: true };
+      });
 
-        // Replace matched with selected
-        matched.length = 0;
-        matched.push(...selected);
-        console.log(`\n✅ Selected ${matched.length} file(s)\n`);
-      } catch (error: any) {
-        // User cancelled (Ctrl+C) or other error
-        if (error.name === "ExitPromptError") {
-          console.log("\n⚠️  Selection cancelled.");
-          process.exit(0);
-        }
-        throw error;
+      const selected = await checkbox({
+        message: "Select files to bundle:",
+        choices,
+        pageSize: 20,
+      });
+
+      if (selected.length === 0) {
+        console.log("\n⚠️  No files selected. Exiting.");
+        process.exit(0);
       }
+
+      matched.length = 0;
+      matched.push(...selected);
+      console.log(`\n✅ Selected ${matched.length} file(s)\n`);
+    } catch (error: any) {
+      if (error.name === "ExitPromptError") {
+        console.log("\n⚠️  Selection cancelled.");
+        process.exit(0);
+      }
+      throw error;
     }
   }
 
-  // Related files discovery: expand matched files to include siblings
+  // Related files discovery
   const wantRelated = Boolean(parsed.related || parsed.r);
   if (wantRelated && matched.length > 0) {
     const beforeCount = matched.length;
     const expanded = await expandWithRelatedFiles(matched);
 
     if (expanded.length > beforeCount) {
-      const added = expanded.length - beforeCount;
-      console.log(`🔗 Found ${added} related file(s)`);
-
-      // Replace matched with expanded list
+      console.log(`🔗 Found ${expanded.length - beforeCount} related file(s)`);
       matched.length = 0;
       matched.push(...expanded);
     }
@@ -1383,13 +526,6 @@ async function main() {
 
   if (!matched.length) {
     console.warn("⚠️  No files matched the given strings.");
-    if (includeExpanded.length > 0) {
-      const zeroPatterns = includeExpanded.filter(p => (includePatternCounts.get(p) || 0) === 0);
-      if (zeroPatterns.length > 0) {
-        console.warn("Patterns with zero file matches:");
-        for (const ptn of zeroPatterns) console.warn(`  - ${ptn}`);
-      }
-    }
     process.exit(3);
   }
 
@@ -1401,24 +537,13 @@ async function main() {
       console.log(`... and ${matched.length - sampleCount} more`);
     }
     console.log(`\nTotal: ${matched.length} file(s).`);
-    if (includeExpanded.length > 0) {
-      console.log("\nInclude pattern matches:");
-      for (const ptn of includeExpanded) {
-        const cnt = includePatternCounts.get(ptn) || 0;
-        console.log(`- ${ptn}: ${cnt}`);
-        const smp = includePatternSamples.get(ptn) || [];
-        for (const s of smp) console.log(`   • ${s}`);
-      }
-    }
     process.exit(0);
   }
 
-  // 3) Run Repomix using custom implementation since stdin and include are broken
-  // Convert matched files to relative paths
+  // Output setup
   const cwd = process.cwd();
   const relativePaths = matched.map(p => path.relative(cwd, p));
 
-  // Determine output early to route logs when writing to stdout
   const rawOutputArg = (parsed.output ?? parsed.o) as any;
   let toStdout = Boolean((parsed as any).stdout);
   if (rawOutputArg === '-' || (parsed.o === true && (parsed._ || []).includes('-'))) {
@@ -1427,34 +552,28 @@ async function main() {
   const outputFile = typeof rawOutputArg === 'string' ? rawOutputArg : undefined;
   const wantsClipboard = Boolean((parsed as any).copy || (parsed as any).c);
   const summaryOnly = !toStdout && !outputFile && !wantsClipboard;
-  const outputStyle = parsed.style || "xml";
+  const outputStyle: OutputStyle = ((parsed as any).style || "xml") as OutputStyle;
   const log = (msg: string) => (toStdout ? console.error(msg) : console.log(msg));
 
   log(`🧩 Packing ${matched.length} file(s)...`);
-  
-  // Get context lines: if no search strings, ignore -l and pack full files
+
   const hasSearchStrings = strings.length > 0;
   const contextLines = hasSearchStrings ? (parsed.lines || parsed.l) : undefined;
-  
+
   if (contextLines) {
     log(`📝 Extracting ${contextLines} lines of context around matches...`);
+    if (smartContext) {
+      log(`   (using smart indentation-aware context)`);
+    }
   } else {
     log(`📝 Files selected:`);
-    relativePaths.forEach(p => log(`  • ${p}`));
-    if (summaryOnly) {
-      log(`(Summary only. Use -o <file> or --stdout to write content)`);
+    relativePaths.slice(0, 10).forEach(p => log(`  • ${p}`));
+    if (relativePaths.length > 10) {
+      log(`  ... and ${relativePaths.length - 10} more`);
     }
   }
 
-  // Since Repomix's stdin and include features are broken, 
-  // we'll directly create the output ourselves
-  
-  // Read and (optionally) combine the files
-  let output = '';
-  let totalMatchCount = 0;
-  let totalWindowCount = 0;
-  const fileSizes: { path: string; size: number; tokens: number }[] = [];
-  // Prepare optional user prompt to append
+  // Prepare prompt text
   const promptParts = normalizeStrings((parsed as any).prompt ?? (parsed as any).p).filter(Boolean);
   const promptPathVals = normalizeStrings((parsed as any)["prompt-path"] ?? (parsed as any).P).filter(Boolean);
   const promptFileParts: string[] = [];
@@ -1464,186 +583,128 @@ async function main() {
       if (txt && txt.trim()) {
         promptFileParts.push(txt.trim());
       }
-    } catch (err) {
+    } catch {
       log(`⚠️  Could not read prompt file: ${pp}`);
     }
   }
   const promptText = [...promptParts, ...promptFileParts].join('\n\n').trim();
-  
-  if (outputStyle === "xml") {
-    if (!summaryOnly) {
-      output = `This file is a merged representation of the filtered codebase, combined into a single document by packx.
 
-<file_summary>
-This section contains a summary of this file.
+  // Stream-based output
+  let outputStream: NodeJS.WritableStream;
+  let outputBuffer: StringBufferStream | null = null;
 
-<purpose>
-This file contains a packed representation of filtered repository contents.
-It is designed to be easily consumable by AI systems for analysis, code review,
-or other automated processes.
-</purpose>
+  if (toStdout) {
+    outputStream = process.stdout;
+  } else if (outputFile && !summaryOnly) {
+    outputStream = createWriteStream(outputFile);
+  } else {
+    outputBuffer = new StringBufferStream();
+    outputStream = outputBuffer;
+  }
 
-<usage_guidelines>
-- Treat this file as a snapshot of the repository's state
-- Be aware that this file may contain sensitive information
-</usage_guidelines>
+  const formatter = new StreamFormatter(outputStream as any, outputStyle);
 
-<notes>
-- Files were filtered by packx based on content and extension matching
-- Total files included: ${matched.length}${contextLines ? `\n- Context lines: ${contextLines} lines around each match` : ''}
-</notes>
-</file_summary>
+  let totalMatchCount = 0;
+  let totalWindowCount = 0;
 
-<directory_structure>
-${relativePaths.join('\n')}
-</directory_structure>
+  if (!summaryOnly) {
+    await formatter.writeHeader(matched.length, relativePaths, contextLines);
+  }
 
-<files>
-This section contains the contents of the repository's files.
+  // Process files in parallel, write sequentially
+  const fileResults = await Promise.all(
+    matched.map((filePath, index) =>
+      limit(async () => {
+        const relPath = relativePaths[index];
+        try {
+          const content = await fs.readFile(filePath, 'utf8');
+          const ext = path.extname(relPath).slice(1) || 'txt';
 
-`;
-    }
-    
-    for (const [index, filePath] of matched.entries()) {
-      const relPath = relativePaths[index];
-      try {
-        const content = await fs.readFile(filePath, 'utf8');
-        
-        let fileOutput = '';
-        if (contextLines) {
-          // Extract context windows
-          const windows = extractContextWindows(content, pattern!, contextLines);
-          if (windows.length > 0) {
-            totalWindowCount += windows.length;
-            totalMatchCount += windows.reduce((sum, w) => sum + w.matches.length, 0);
-            
-            const formatted = formatContextWindows(windows, relPath);
-            if (formatted) {
-              fileOutput = `<file path="${relPath}" matches="${windows.reduce((sum, w) => sum + w.matches.length, 0)}" windows="${windows.length}">
-${formatted}</file>
+          let fileOutput = '';
+          let matchCount = 0;
+          let windowCount = 0;
 
-`;
+          if (contextLines && pattern) {
+            const windows = extractContextWindows(content, pattern, contextLines, smartContext);
+            if (windows.length > 0) {
+              windowCount = windows.length;
+              matchCount = windows.reduce((sum, w) => sum + w.matches.length, 0);
+              const formatted = formatContextWindows(windows, relPath);
+
+              if (outputStyle === "xml") {
+                fileOutput = `<file path="${relPath}" matches="${matchCount}" windows="${windowCount}">\n${formatted}</file>\n\n`;
+              } else {
+                fileOutput = `### ${relPath}\n\n**Matches:** ${matchCount} | **Context windows:** ${windowCount}\n\n\`\`\`${ext}\n${formatted}\`\`\`\n\n`;
+              }
+            }
+          } else {
+            if (outputStyle === "xml") {
+              fileOutput = `<file path="${relPath}">\n${content}\n</file>\n\n`;
+            } else {
+              fileOutput = `### ${relPath}\n\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
             }
           }
-        } else {
-          // Include entire file
-          fileOutput = `<file path="${relPath}">
-${content}
-</file>
 
-`;
+          const tokens = countTokens(fileOutput);
+          return { relPath, fileOutput, tokens, size: fileOutput.length, matchCount, windowCount };
+        } catch (err) {
+          return { relPath, fileOutput: '', tokens: 0, size: 0, matchCount: 0, windowCount: 0, error: err };
         }
-        
-        if (fileOutput) {
-          if (!summaryOnly) output += fileOutput;
-          // Track file size for summary
-          const fileSize = fileOutput.length;
-          const fileTokens = Math.round(fileSize / 4);
-          fileSizes.push({ path: relPath, size: fileSize, tokens: fileTokens });
-        }
-      } catch (err) {
-        console.error(`Warning: Could not read file ${relPath}: ${err}`);
-      }
+      })
+    )
+  );
+
+  // Write results sequentially
+  const fileSizes: { path: string; size: number; tokens: number }[] = [];
+
+  for (const result of fileResults) {
+    if (result.fileOutput && !summaryOnly) {
+      outputStream.write(result.fileOutput);
     }
-    if (!summaryOnly) {
-      output += `</files>`;
+    if (result.fileOutput) {
+      fileSizes.push({ path: result.relPath, size: result.size, tokens: result.tokens });
+      totalMatchCount += result.matchCount;
+      totalWindowCount += result.windowCount;
     }
-  } else {
-    // Markdown format
-    if (!summaryOnly) {
-      output = `# Packx Output
-
-This file contains ${matched.length} filtered files from the repository.${contextLines ? `\n\n**Context:** ${contextLines} lines around each match` : ''}
-
-## Files
-
-`;
-    }
-    
-    for (const [index, filePath] of matched.entries()) {
-      const relPath = relativePaths[index];
-      try {
-        const content = await fs.readFile(filePath, 'utf8');
-        const ext = path.extname(relPath).slice(1) || 'txt';
-        
-        let fileOutput = '';
-        if (contextLines) {
-          // Extract context windows
-          const windows = extractContextWindows(content, pattern!, contextLines);
-          if (windows.length > 0) {
-            totalWindowCount += windows.length;
-            totalMatchCount += windows.reduce((sum, w) => sum + w.matches.length, 0);
-            
-            fileOutput = `### ${relPath}
-
-**Matches:** ${windows.reduce((sum, w) => sum + w.matches.length, 0)} | **Context windows:** ${windows.length}
-
-\`\`\`${ext}
-${formatContextWindows(windows, relPath)}\`\`\`
-
-`;
-          }
-        } else {
-          // Include entire file
-          fileOutput = `### ${relPath}
-
-\`\`\`${ext}
-${content}
-\`\`\`
-
-`;
-        }
-        
-        if (fileOutput) {
-          if (!summaryOnly) output += fileOutput;
-          // Track file size for summary
-          const fileSize = fileOutput.length;
-          const fileTokens = Math.round(fileSize / 4);
-          fileSizes.push({ path: relPath, size: fileSize, tokens: fileTokens });
-        }
-      } catch (err) {
-        console.error(`Warning: Could not read file ${relPath}: ${err}`);
-      }
+    if (result.error) {
+      console.error(`Warning: Could not read file ${result.relPath}: ${result.error}`);
     }
   }
-  
-  // Append user-provided prompt as a Markdown block, if present
-  if (!summaryOnly && promptText) {
-    output += `\n\n---\n\n${promptText}\n`;
+
+  if (!summaryOnly) {
+    await formatter.writeFooter();
+    if (promptText) {
+      await formatter.writePrompt(promptText);
+    }
   }
 
-  // Write the output (file or stdout). Default is summary-only (no content output)
-  if (toStdout) {
-    process.stdout.write(output);
-  } else if (outputFile) {
-    await fs.writeFile(outputFile, output, 'utf8');
+  // Finalize output
+  if (outputFile && !summaryOnly) {
+    await new Promise<void>((resolve) => {
+      (outputStream as NodeJS.WritableStream).end(() => resolve());
+    });
     console.log(`\n✅ Successfully packed ${matched.length} file(s) to ${outputFile}`);
   }
-  
-  // Handle passthrough args like --copy
-  if (!toStdout && (parsed.copy || parsed.c)) {
+
+  // Handle clipboard
+  const output = outputBuffer?.toString() || '';
+  if (wantsClipboard && !toStdout) {
     try {
-      // Copy to clipboard using the native clipboard API via a child process
       const { spawn } = await import('child_process');
-      
-      // Determine the platform and use appropriate command
       const platform = process.platform;
       let copyProc;
-      
+
       if (platform === 'darwin') {
-        // macOS
         copyProc = spawn('pbcopy');
       } else if (platform === 'win32') {
-        // Windows
         copyProc = spawn('clip');
       } else {
-        // Linux - try xclip
         copyProc = spawn('xclip', ['-selection', 'clipboard']);
       }
-      
+
       copyProc.stdin.write(output);
       copyProc.stdin.end();
-      
+
       await new Promise((resolve, reject) => {
         copyProc.on('exit', (code) => {
           if (code === 0) {
@@ -1654,23 +715,20 @@ ${content}
             reject(new Error(`Copy process exited with code ${code}`));
           }
         });
-        copyProc.on('error', (err) => {
+        copyProc.on('error', () => {
           console.log('⚠️  Could not copy to clipboard (clipboard tool not found)');
-          reject(err);
+          reject();
         });
       });
-    } catch (err) {
+    } catch {
       // Silently fail if clipboard is not available
     }
   }
-  
-  // Calculate some stats
-  const totalChars = (!toStdout && !outputFile && fileSizes.length)
-    ? fileSizes.reduce((sum, f) => sum + f.size, 0)
-    : output.length;
-  const totalTokens = Math.round(totalChars / 4); // Rough estimate
-  
-  // Reuse existing log() for summary output
+
+  // Summary
+  const totalChars = fileSizes.reduce((sum, f) => sum + f.size, 0);
+  const totalTokens = fileSizes.reduce((sum, f) => sum + f.tokens, 0);
+
   log(`\n📊 Pack Summary:`);
   log(`────────────────`);
   log(`  Total Files: ${matched.length} files`);
@@ -1679,31 +737,34 @@ ${content}
     log(`  Total Matches: ${totalMatchCount} matches`);
     log(`  Context Windows: ${totalWindowCount} windows`);
   }
-  log(`  Total Tokens: ~${totalTokens.toLocaleString()} tokens`);
+  log(`  Total Tokens: ~${formatTokenCount(totalTokens)} (${totalTokens.toLocaleString()} exact)`);
   log(`  Total Chars: ${totalChars.toLocaleString()} chars`);
   log(`       Output: ${toStdout ? '-' : (outputFile ?? 'none')}`);
-  
-  // Show found extensions
+
+  const warning = getTokenWarning(totalTokens);
+  if (warning) {
+    log(`\n${warning}`);
+  }
+
   if (foundExtensions.size > 0) {
     const sortedExtensions = Array.from(foundExtensions).sort();
     log(`\n📁 Extensions Found:`);
     log(`────────────────────`);
     log(`  ${sortedExtensions.join(', ')}`);
   }
-  
-  // Show top files by size
+
   if (fileSizes.length > 0) {
     const topFiles = fileSizes
       .sort((a, b) => b.tokens - a.tokens)
       .slice(0, 10);
-    
+
     log(`\n📂 Top 10 Files (by tokens):`);
     log(`──────────────────────────`);
     for (const file of topFiles) {
       const fileName = path.basename(file.path);
       const dirName = path.dirname(file.path);
       const shortPath = dirName === '.' ? fileName : `${dirName}/${fileName}`;
-      log(`  ${file.tokens.toLocaleString().padStart(8)} tokens - ${shortPath}`);
+      log(`  ${formatTokenCount(file.tokens).padStart(8)} - ${shortPath}`);
     }
   }
 }
