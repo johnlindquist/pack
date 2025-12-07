@@ -1,3 +1,10 @@
+# [3.5.0](https://github.com/johnlindquist/pack/compare/v3.4.0...v3.5.0) (2025-12-07)
+
+
+### Features
+
+* major improvements for performance, accuracy, and maintainability ([c8e291c](https://github.com/johnlindquist/pack/commit/c8e291c63541e022824efefaefb6b65a259934bb)), closes [#1](https://github.com/johnlindquist/pack/issues/1)
+
 # [3.4.0](https://github.com/johnlindquist/pack/compare/v3.3.0...v3.4.0) (2025-12-05)
 
 
