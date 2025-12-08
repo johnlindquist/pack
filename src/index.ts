@@ -133,10 +133,10 @@ function buildFileTree(files: FileChoice[]): { tree: TreeNode[], flatNodes: Tree
   // Flatten tree for display (respecting collapsed state)
   function flattenTree(nodes: TreeNode[], collapsed: Set<string>): TreeNode[] {
     const result: TreeNode[] = [];
-    // Sort: folders first, then by name
+    // Sort: folders first, then by token count (largest first)
     const sorted = [...nodes].sort((a, b) => {
       if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
-      return a.name.localeCompare(b.name);
+      return b.tokens - a.tokens; // Sort by tokens descending
     });
     for (const node of sorted) {
       result.push(node);
@@ -162,14 +162,17 @@ const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, done) =
   const initialSelected = new Set<number>(files.map((_, i) => i));
   const [selected, setSelected] = useState<Set<number>>(initialSelected);
   const [showExtensions, setShowExtensions] = useState<boolean>(false);
+  const [filterText, setFilterText] = useState<string>('');
+  const [isFiltering, setIsFiltering] = useState<boolean>(false);
 
   // Flatten tree with current collapsed state
   function getFlatNodes(): TreeNode[] {
     function flatten(nodes: TreeNode[]): TreeNode[] {
       const result: TreeNode[] = [];
+      // Sort: folders first, then by token count (largest first)
       const sorted = [...nodes].sort((a, b) => {
         if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
-        return a.name.localeCompare(b.name);
+        return b.tokens - a.tokens;
       });
       for (const node of sorted) {
         result.push(node);
@@ -179,7 +182,14 @@ const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, done) =
       }
       return result;
     }
-    return flatten(tree);
+    let nodes = flatten(tree);
+
+    // Apply filter if active
+    if (filterText) {
+      const lowerFilter = filterText.toLowerCase();
+      nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
+    }
+    return nodes;
   }
 
   // Get extension summary
@@ -210,8 +220,29 @@ const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, done) =
 
   useKeypress((key) => {
     if (isEnterKey(key)) {
+      if (isFiltering) {
+        setIsFiltering(false);
+        setCursor(0);
+        return;
+      }
       const result = files.filter((_, i) => selected.has(i)).map(f => f.path);
       done(result);
+      return;
+    }
+
+    // Filter input mode
+    if (isFiltering) {
+      if (key.name === 'escape') {
+        setIsFiltering(false);
+        setFilterText('');
+        setCursor(0);
+      } else if (key.name === 'backspace') {
+        setFilterText(filterText.slice(0, -1));
+        setCursor(0);
+      } else if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
+        setFilterText(filterText + key.sequence);
+        setCursor(0);
+      }
       return;
     }
 
@@ -275,15 +306,26 @@ const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, done) =
         setCollapsed(next);
       }
     } else if (key.name === 'a') {
-      // Toggle all
-      if (selected.size === files.length) {
-        setSelected(new Set<number>());
+      // Toggle all (visible if filtered)
+      const visibleIndices = flatNodes.flatMap(n => n.fileIndices);
+      const allVisibleSelected = visibleIndices.every(i => selected.has(i));
+      const next = new Set(selected);
+      if (allVisibleSelected) {
+        visibleIndices.forEach(i => next.delete(i));
       } else {
-        setSelected(new Set(files.map((_, i) => i)));
+        visibleIndices.forEach(i => next.add(i));
       }
+      setSelected(next);
     } else if (key.name === 'e') {
       // Switch to extension mode
       setShowExtensions(true);
+      setCursor(0);
+    } else if (key.sequence === '/') {
+      // Enter filter mode
+      setIsFiltering(true);
+    } else if (key.name === 'escape' && filterText) {
+      // Clear filter
+      setFilterText('');
       setCursor(0);
     }
   });
@@ -349,9 +391,18 @@ const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, done) =
   }
 
   const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)\x1b[0m`;
-  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, a all, e extensions, enter confirm)\x1b[0m';
 
-  return `${config.message}\n${lines.join('\n')}${totalLine}\n${helpLine}`;
+  // Show filter input or help line
+  let filterLine = '';
+  if (isFiltering) {
+    filterLine = `\x1b[33m🔍 Filter: ${filterText}█\x1b[0m  \x1b[90m(enter to apply, esc to cancel)\x1b[0m`;
+  } else if (filterText) {
+    filterLine = `\x1b[33m🔍 Filter: "${filterText}"\x1b[0m  \x1b[90m(showing ${flatNodes.length} matches, esc to clear)\x1b[0m`;
+  }
+
+  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, a all, e extensions, / filter, enter confirm)\x1b[0m';
+
+  return `${config.message}\n${filterLine ? filterLine + '\n' : ''}${lines.join('\n')}${totalLine}\n${helpLine}`;
 });
 
 async function createConfigTemplate(filename: string = 'pack-config.ini') {
