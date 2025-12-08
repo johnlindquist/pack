@@ -250,7 +250,8 @@ export async function resolveConfig(argv: string[]): Promise<{
 
   // Parse config file or CLI args
   // Auto-detect pack-config.ini if no explicit config specified
-  let configFile = parsed.config || parsed.file || (parsed as any).f;
+  // Note: -f is aliased to --format, so we should NOT use parsed.f for config file
+  let configFile = parsed.config || parsed.file;
 
   if (!configFile) {
     const defaultConfig = path.join(process.cwd(), 'pack-config.ini');

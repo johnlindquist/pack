@@ -100,7 +100,7 @@ export function printHelp(): void {
 
 \x1b[1mOUTPUT\x1b[0m
   -o, --output <file>      Write output to file
-  -f, --format <fmt>       Output format: xml, markdown, plain (default: xml)
+  -f, --format <fmt>       Output format: xml, markdown, plain, jsonl (default: xml)
   -c, --copy               Copy output to clipboard
       --stdout             Write to stdout (default if no -o)
       --preview            Show matching files without packing
