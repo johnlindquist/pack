@@ -27,6 +27,7 @@ export function parseArgs(args: string[]): Argv {
       I: "interactive",
       r: "related",
       p: "prompt",
+      M: "max-tokens",
     },
     string: [
       "strings", "s",
@@ -37,7 +38,8 @@ export function parseArgs(args: string[]): Argv {
       "format", "f", "style",
       "config", "file",
       "prompt", "p", "template",
-      "instruction"
+      "instruction",
+      "max-tokens", "M"
     ],
     boolean: [
       "regex", "R",
@@ -98,6 +100,8 @@ export function printHelp(): void {
   -c, --copy               Copy output to clipboard
       --stdout             Write to stdout (default if no -o)
       --preview            Show matching files without packing
+  -M, --max-tokens <N>     Split output into chunks of max N tokens each
+                           Creates output-1.xml, output-2.xml, etc.
 
 \x1b[1mPERFORMANCE\x1b[0m
       --rg                 Force ripgrep for file search (auto-detected by default)

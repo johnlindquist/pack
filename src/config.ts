@@ -373,6 +373,11 @@ export async function resolveConfig(argv: string[]): Promise<{
     useRipgrep = 'disabled';
   }
 
+  // Parse max-tokens
+  const maxTokensRaw = parsed["max-tokens"] || (parsed as any).M;
+  const maxTokens = maxTokensRaw ? parseInt(String(maxTokensRaw), 10) : undefined;
+
+
   const options: PackerOptions = {
     roots: positionalRoots.length ? positionalRoots : ['.'],
     searchStrings,
@@ -397,6 +402,7 @@ export async function resolveConfig(argv: string[]): Promise<{
     interactive: Boolean(parsed.interactive || parsed.I),
     promptText: promptParts.length > 0 ? promptParts.join('\n\n') : undefined,
     useRipgrep,
+    maxTokens: maxTokens && !isNaN(maxTokens) ? maxTokens : undefined,
   };
 
   return { options, parsed, shouldExit: null };

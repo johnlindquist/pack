@@ -9,7 +9,7 @@ import { glob } from "glob";
 import { Minimatch } from "minimatch";
 import pLimit from "p-limit";
 
-import type { PackerOptions, FileStats } from "./types.js";
+import type { PackerOptions, FileStats, OutputChunk } from "./types.js";
 import { buildPattern } from "./utils.js";
 import { isGitRepository, getGitStagedFiles, getGitDirtyFiles, getGitDiffFiles } from "./git.js";
 import { loadGitignore, DEFAULT_IGNORE_PATTERNS, expandWithRelatedFiles } from "./scanner.js";
@@ -31,6 +31,7 @@ export type PackResult = {
   matchedFiles: string[];
   candidatesFound: number; // Number of files found before content filtering
   usedRipgrep?: boolean; // Whether ripgrep was used for discovery
+  chunks?: OutputChunk[];  // Populated when maxTokens is set
 };
 
 /**
@@ -464,16 +465,10 @@ export class Packer {
       )
     );
 
-    // Assemble output
-    const header = createHeader(options.outputStyle, files.length, relativePaths, options.contextLines);
-    const footer = createFooter(options.outputStyle);
-
-    let output = header;
+    // Collect stats for all files
     const fileSizes: FileStats[] = [];
-
     for (const result of fileResults) {
       if (result.fileOutput) {
-        output += result.fileOutput;
         fileSizes.push({
           path: result.relPath,
           size: result.size,
@@ -486,6 +481,37 @@ export class Packer {
       }
     }
 
+    const totalTokens = fileSizes.reduce((sum, f) => sum + f.tokens, 0);
+    const totalChars = fileSizes.reduce((sum, f) => sum + f.size, 0);
+
+    // Check if we need to split into chunks
+    if (options.maxTokens && totalTokens > options.maxTokens) {
+      const chunks = this.splitIntoChunks(fileResults, relativePaths, options.maxTokens);
+
+      // Return combined result with chunks
+      return {
+        output: chunks[0]?.output || '', // First chunk as default output
+        files: fileSizes,
+        totalTokens,
+        totalChars,
+        totalMatchCount,
+        totalWindowCount,
+        matchedFiles: files,
+        candidatesFound,
+        chunks,
+      };
+    }
+
+    // Standard single output
+    const header = createHeader(options.outputStyle, files.length, relativePaths, options.contextLines);
+    const footer = createFooter(options.outputStyle);
+
+    let output = header;
+    for (const result of fileResults) {
+      if (result.fileOutput) {
+        output += result.fileOutput;
+      }
+    }
     output += footer;
 
     // Add prompt if provided
@@ -495,9 +521,6 @@ export class Packer {
         : `\n\n---\n\n${options.promptText}\n`;
       output += promptFormatted;
     }
-
-    const totalTokens = fileSizes.reduce((sum, f) => sum + f.tokens, 0);
-    const totalChars = fileSizes.reduce((sum, f) => sum + f.size, 0);
 
     return {
       output,
@@ -561,5 +584,121 @@ export class Packer {
    */
   getExcludePattern(): RegExp | null {
     return this.excludePattern;
+  }
+
+  /**
+   * Split output into chunks based on token limit
+   */
+  splitIntoChunks(
+    fileResults: Array<{ relPath: string; fileOutput: string; tokens: number; size: number; matchCount: number; windowCount: number }>,
+    relativePaths: string[],
+    maxTokens: number
+  ): OutputChunk[] {
+    const { options } = this;
+    const chunks: OutputChunk[] = [];
+
+    // Estimate header/footer token overhead per chunk
+    const sampleHeader = createHeader(options.outputStyle, 1, ['sample.ts'], options.contextLines);
+    const sampleFooter = createFooter(options.outputStyle);
+    const headerFooterTokens = countTokens(sampleHeader) + countTokens(sampleFooter);
+
+    // Reserve tokens for header/footer and chunk info
+    const chunkInfoOverhead = 50; // ~50 tokens for chunk info header
+    const availableTokens = maxTokens - headerFooterTokens - chunkInfoOverhead;
+
+    if (availableTokens <= 0) {
+      throw new Error(`max-tokens (${maxTokens}) is too small. Need at least ${headerFooterTokens + chunkInfoOverhead + 100} tokens for headers.`);
+    }
+
+    let currentChunkFiles: typeof fileResults = [];
+    let currentChunkTokens = 0;
+
+    const flushChunk = () => {
+      if (currentChunkFiles.length === 0) return;
+
+      const chunkNumber = chunks.length + 1;
+      const chunkRelPaths = currentChunkFiles.map(f => f.relPath);
+
+      // Build chunk output
+      let chunkOutput = createHeader(options.outputStyle, currentChunkFiles.length, chunkRelPaths, options.contextLines);
+
+      // Add chunk info at the start
+      const chunkInfo = options.outputStyle === 'xml'
+        ? `<chunk_info part="${chunkNumber}" />\n\n`
+        : `**Part ${chunkNumber}**\n\n`;
+      chunkOutput = chunkInfo + chunkOutput;
+
+      for (const result of currentChunkFiles) {
+        chunkOutput += result.fileOutput;
+      }
+
+      chunkOutput += createFooter(options.outputStyle);
+
+      const chunkStats: FileStats[] = currentChunkFiles.map(f => ({
+        path: f.relPath,
+        size: f.size,
+        tokens: f.tokens,
+        matchCount: f.matchCount,
+        windowCount: f.windowCount
+      }));
+
+      chunks.push({
+        chunkNumber,
+        totalChunks: 0, // Will be updated after all chunks are created
+        output: chunkOutput,
+        files: chunkStats,
+        tokens: countTokens(chunkOutput),
+        chars: chunkOutput.length
+      });
+
+      currentChunkFiles = [];
+      currentChunkTokens = 0;
+    };
+
+    for (const result of fileResults) {
+      if (!result.fileOutput) continue;
+
+      // If single file exceeds available tokens, it gets its own chunk
+      if (result.tokens > availableTokens) {
+        // Flush current chunk first
+        flushChunk();
+        // Add oversized file as its own chunk
+        currentChunkFiles = [result];
+        currentChunkTokens = result.tokens;
+        flushChunk();
+        continue;
+      }
+
+      // Check if adding this file would exceed the limit
+      if (currentChunkTokens + result.tokens > availableTokens) {
+        flushChunk();
+      }
+
+      currentChunkFiles.push(result);
+      currentChunkTokens += result.tokens;
+    }
+
+    // Flush remaining files
+    flushChunk();
+
+    // Update totalChunks in all chunks
+    const totalChunks = chunks.length;
+    for (const chunk of chunks) {
+      chunk.totalChunks = totalChunks;
+      // Update chunk info with total
+      if (options.outputStyle === 'xml') {
+        chunk.output = chunk.output.replace(
+          `<chunk_info part="${chunk.chunkNumber}" />`,
+          `<chunk_info part="${chunk.chunkNumber}" total="${totalChunks}" />`
+        );
+      } else {
+        chunk.output = chunk.output.replace(
+          `**Part ${chunk.chunkNumber}**`,
+          `**Part ${chunk.chunkNumber} of ${totalChunks}**`
+        );
+      }
+    }
+
+    return chunks;
   }
 }
