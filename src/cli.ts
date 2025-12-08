@@ -97,8 +97,13 @@ export function printHelp(): void {
       --stdout             Write to stdout (default if no -o)
       --preview            Show matching files without packing
 
+\x1b[1mINTERACTIVE MODE\x1b[0m
+  -I, --interactive        Select files interactively with preview pane
+                           • Tab to focus/unfocus preview
+                           • PgUp/PgDn to scroll preview
+                           • With -l, shows context windows around matches
+
 \x1b[1mOTHER\x1b[0m
-  -I, --interactive        Select files interactively
       --config <file>      Load config file
   -h, --help               Show this help
   -v, --version            Show version

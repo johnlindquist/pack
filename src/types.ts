@@ -142,6 +142,11 @@ export type TreeCheckboxConfig = {
   message: string;
   files: FileChoice[];
   pageSize?: number;
+  // Preview options
+  showPreview?: boolean;
+  previewWidth?: number;  // Width in characters for preview pane
+  searchPattern?: RegExp | null;  // Pattern for context window highlighting
+  contextLines?: number;  // Number of context lines around matches
 };
 
 // ============================================================================
