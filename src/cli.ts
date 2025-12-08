@@ -53,7 +53,9 @@ export function parseArgs(args: string[]): Argv {
       "preview",
       "help", "h",
       "version", "v",
-      "stdout"
+      "stdout",
+      "rg",
+      "no-rg"
     ]
   }) as Argv;
 }
@@ -96,6 +98,10 @@ export function printHelp(): void {
   -c, --copy               Copy output to clipboard
       --stdout             Write to stdout (default if no -o)
       --preview            Show matching files without packing
+
+\x1b[1mPERFORMANCE\x1b[0m
+      --rg                 Force ripgrep for file search (auto-detected by default)
+      --no-rg              Disable ripgrep, use Node.js glob instead
 
 \x1b[1mOTHER\x1b[0m
   -I, --interactive        Select files interactively

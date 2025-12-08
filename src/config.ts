@@ -363,6 +363,16 @@ export async function resolveConfig(argv: string[]): Promise<{
   // Parse prompt text
   const promptParts = normalizeStrings((parsed as any).prompt ?? (parsed as any).p).filter(Boolean);
 
+  // Determine ripgrep mode
+  // Note: mri treats --no-rg as negating the rg flag (rg: false)
+  // So we check for explicit false or the "no-rg" property
+  let useRipgrep: PackerOptions['useRipgrep'] = 'auto';
+  if (parsed.rg === true) {
+    useRipgrep = 'force';
+  } else if (parsed["no-rg"] === true || parsed.rg === false) {
+    useRipgrep = 'disabled';
+  }
+
   const options: PackerOptions = {
     roots: positionalRoots.length ? positionalRoots : ['.'],
     searchStrings,
@@ -386,6 +396,7 @@ export async function resolveConfig(argv: string[]): Promise<{
     previewOnly: Boolean(parsed.preview),
     interactive: Boolean(parsed.interactive || parsed.I),
     promptText: promptParts.length > 0 ? promptParts.join('\n\n') : undefined,
+    useRipgrep,
   };
 
   return { options, parsed, shouldExit: null };
@@ -418,5 +429,6 @@ function createDefaultOptions(): PackerOptions {
     previewOnly: false,
     interactive: false,
     promptText: undefined,
+    useRipgrep: 'auto',
   };
 }

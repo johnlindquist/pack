@@ -109,7 +109,7 @@ async function copyToClipboard(text: string): Promise<boolean> {
  * Print pack summary
  */
 function printSummary(
-  result: { files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[] },
+  result: { files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[]; usedRipgrep?: boolean },
   options: { contextLines?: number; toStdout: boolean; outputFile?: string }
 ) {
   const log = (msg: string) => (options.toStdout ? console.error(msg) : console.log(msg));
@@ -117,6 +117,9 @@ function printSummary(
   log(`\n📊 Pack Summary:`);
   log(`────────────────`);
   log(`  Total Files: ${result.matchedFiles.length} files`);
+  if (result.usedRipgrep !== undefined) {
+    log(`  Search Mode: ${result.usedRipgrep ? 'ripgrep (fast)' : 'glob (fallback)'}`);
+  }
   if (options.contextLines) {
     log(`  Context Lines: ${options.contextLines} around each match`);
     log(`  Total Matches: ${result.totalMatchCount} matches`);
@@ -311,7 +314,7 @@ async function main() {
  * Handle output: write to file, stdout, or clipboard
  */
 async function handleOutput(
-  result: { output: string; files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[] },
+  result: { output: string; files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[]; usedRipgrep?: boolean },
   options: { toStdout: boolean; outputFile?: string; copyToClipboard: boolean; contextLines?: number },
   log: (msg: string) => void
 ) {

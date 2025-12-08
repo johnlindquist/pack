@@ -48,6 +48,10 @@ export type Argv = mri.Argv & {
   help?: boolean;                  // -h
   version?: boolean;               // -v
 
+  // Performance
+  rg?: boolean;                    // --rg (use ripgrep)
+  "no-rg"?: boolean;               // --no-rg (disable ripgrep)
+
   // Legacy mappings
   extensions?: string | string[];
   "exclude-extensions"?: string | string[];
@@ -186,4 +190,7 @@ export type PackerOptions = {
 
   // Prompt/instructions
   promptText?: string;
+
+  // Performance
+  useRipgrep: 'auto' | 'force' | 'disabled';
 };

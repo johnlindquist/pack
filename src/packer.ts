@@ -17,6 +17,7 @@ import { isBinaryFile, countTokens, analyzeFile } from "./analysis.js";
 import { extractContextWindows, formatContextWindows } from "./context.js";
 import { stripComments, minify } from "./processing.js";
 import { createHeader, createFooter, type OutputStyle } from "./formatter.js";
+import { isRipgrepAvailable, discoverFilesWithRipgrep, ripgrepExcludeContent } from "./ripgrep.js";
 
 const CONCURRENCY_LIMIT = 50;
 
@@ -29,6 +30,7 @@ export type PackResult = {
   totalWindowCount: number;
   matchedFiles: string[];
   candidatesFound: number; // Number of files found before content filtering
+  usedRipgrep?: boolean; // Whether ripgrep was used for discovery
 };
 
 /**
@@ -38,6 +40,8 @@ export class Packer {
   private options: PackerOptions;
   private pattern: RegExp | null;
   private excludePattern: RegExp | null;
+  private usedRipgrep: boolean = false;
+  private ripgrepDidContentFilter: boolean = false;
 
   constructor(options: PackerOptions) {
     this.options = options;
@@ -49,15 +53,29 @@ export class Packer {
    * Execute the full packing pipeline
    */
   async pack(): Promise<PackResult> {
+    // Reset ripgrep flags
+    this.usedRipgrep = false;
+    this.ripgrepDidContentFilter = false;
+
     // 1. Discover files
     const candidates = await this.discoverFiles();
 
     if (candidates.length === 0) {
-      return this.emptyResult(0);
+      // If ripgrep was used with a content filter, we should report as "no matches"
+      // (exit code 3) rather than "no files" (exit code 2) since files may exist
+      // but none contained the search string.
+      const candidatesFoundIndicator = this.ripgrepDidContentFilter ? 1 : 0;
+      return this.emptyResult(candidatesFoundIndicator);
     }
 
-    // 2. Filter by content
-    let matched = await this.filterByContent(candidates);
+    // 2. Filter by content (skip if ripgrep already did content filtering)
+    let matched: string[];
+    if (this.usedRipgrep && this.options.searchStrings.length > 0) {
+      // Ripgrep already filtered by content, just verify files exist
+      matched = await this.verifyFilesExist(candidates);
+    } else {
+      matched = await this.filterByContent(candidates);
+    }
 
     if (matched.length === 0) {
       return this.emptyResult(candidates.length);
@@ -69,13 +87,127 @@ export class Packer {
     }
 
     // 4. Process and format
-    return this.processFiles(matched, candidates.length);
+    const result = await this.processFiles(matched, candidates.length);
+    result.usedRipgrep = this.usedRipgrep;
+    return result;
+  }
+
+  /**
+   * Verify that files exist and are readable (used when ripgrep already filtered)
+   */
+  private async verifyFilesExist(files: string[]): Promise<string[]> {
+    const limit = pLimit(CONCURRENCY_LIMIT);
+    const results = await Promise.all(
+      files.map(file =>
+        limit(async () => {
+          try {
+            await fs.access(file);
+            // Also check if it's a binary file
+            if (await isBinaryFile(file)) {
+              return null;
+            }
+            return file;
+          } catch {
+            return null;
+          }
+        })
+      )
+    );
+    return results.filter((f): f is string => f !== null);
   }
 
   /**
    * Discover candidate files based on options
    */
   private async discoverFiles(): Promise<string[]> {
+    const { options } = this;
+
+    // Determine if we should try ripgrep
+    const shouldTryRipgrep = options.useRipgrep !== 'disabled' && !options.gitMode;
+
+    if (shouldTryRipgrep) {
+      const rgResult = await this.discoverWithRipgrep();
+      if (rgResult !== null) {
+        return rgResult;
+      }
+      // Fall through to glob-based discovery if ripgrep failed
+    }
+
+    return this.discoverWithGlob();
+  }
+
+  /**
+   * Discover files using ripgrep (fast path)
+   * Returns null if ripgrep is not available or fails
+   */
+  private async discoverWithRipgrep(): Promise<string[] | null> {
+    const { options } = this;
+
+    // Check if ripgrep is available
+    const rgAvailable = await isRipgrepAvailable();
+    if (!rgAvailable) {
+      if (options.useRipgrep === 'force') {
+        throw new Error("ripgrep (rg) is required but not available. Install it or remove --rg flag.");
+      }
+      return null;
+    }
+
+    // Track whether ripgrep will filter by content
+    const willFilterByContent = options.searchStrings.length > 0;
+
+    // Ripgrep works best when we can combine file discovery and content search
+    // For each root directory, run ripgrep
+    const candidates = new Set<string>();
+
+    for (const root of options.roots) {
+      const absRoot = path.resolve(root);
+
+      const result = await discoverFilesWithRipgrep(
+        absRoot,
+        options.extensions,
+        options.excludePatterns,
+        options.searchStrings,
+        options.excludeStrings,
+        options.caseSensitive,
+        options.useRegex,
+        true // useGitignore
+      );
+
+      if (!result.usedRipgrep) {
+        // Ripgrep failed for some reason
+        if (options.useRipgrep === 'force') {
+          throw new Error(`ripgrep failed: ${result.error}`);
+        }
+        return null;
+      }
+
+      if (result.error) {
+        // Non-fatal error (e.g., no matches found)
+        // Continue with empty results from this root
+      }
+
+      for (const file of result.files) {
+        candidates.add(file);
+      }
+    }
+
+    // Add explicit files
+    for (const f of options.explicitFiles) {
+      candidates.add(f);
+    }
+
+    // Apply include matchers (ripgrep already handled extensions)
+    const filtered = this.applyMatchers([...candidates]);
+
+    this.usedRipgrep = true;
+    this.ripgrepDidContentFilter = willFilterByContent;
+    return filtered;
+  }
+
+  /**
+   * Discover files using glob (fallback path)
+   */
+  private async discoverWithGlob(): Promise<string[]> {
     const candidates = new Set<string>();
     const { options } = this;
 
@@ -392,6 +524,7 @@ export class Packer {
       totalWindowCount: 0,
       matchedFiles: [],
       candidatesFound,
+      usedRipgrep: this.usedRipgrep,
     };
   }
 
