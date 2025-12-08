@@ -37,6 +37,7 @@ export type Argv = mri.Argv & {
   "no-comments"?: boolean;         // --no-comments (alias)
   minify?: boolean;                // --minify
   related?: boolean;               // -r
+  "follow-imports"?: boolean;      // --follow-imports
 
   // Instructions
   instruction?: string;
@@ -201,6 +202,7 @@ export type PackerOptions = {
   contextLines?: number;
   smartContext: boolean;
   includeRelated: boolean;
+  followImports: boolean;
 
   // Output
   outputStyle: OutputStyle;

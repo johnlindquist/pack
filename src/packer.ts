@@ -13,6 +13,7 @@ import type { PackerOptions, FileStats, OutputChunk } from "./types.js";
 import { buildPattern } from "./utils.js";
 import { isGitRepository, getGitStagedFiles, getGitDirtyFiles, getGitDiffFiles } from "./git.js";
 import { loadGitignore, DEFAULT_IGNORE_PATTERNS, expandWithRelatedFiles } from "./scanner.js";
+import { expandWithDependencies } from "./dependencies.js";
 import { isBinaryFile, countTokens, analyzeFile } from "./analysis.js";
 import { extractContextWindows, formatContextWindows } from "./context.js";
 import { stripComments, minify } from "./processing.js";
@@ -95,7 +96,14 @@ export class Packer {
         matched = await expandWithRelatedFiles(matched);
       }
 
-      // 4. Process and format
+      // 4. Expand with import dependencies if requested
+      if (this.options.followImports) {
+        matched = await expandWithDependencies(matched, {
+          projectRoot: this.options.roots[0] || process.cwd(),
+        });
+      }
+
+      // 5. Process and format
       const result = await this.processFiles(matched, candidates.length);
       result.usedRipgrep = this.usedRipgrep;
       return result;
