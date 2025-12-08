@@ -358,7 +358,7 @@ export async function formatFileAsJsonl(
   // Apply processing
   if (options.stripComments) {
     const ext = path.extname(relPath);
-    content = stripComments(content, ext);
+    content = await stripComments(content, ext);
   }
   if (options.minify) {
     content = minify(content);
