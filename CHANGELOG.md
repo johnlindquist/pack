@@ -1,3 +1,10 @@
+## [3.8.1](https://github.com/johnlindquist/pack/compare/v3.8.0...v3.8.1) (2025-12-08)
+
+
+### Bug Fixes
+
+* **config:** add [files] section support for explicit file selection ([5ae46c9](https://github.com/johnlindquist/pack/commit/5ae46c9addef328a3f663e250a68e362cbd2a0ce))
+
 # [3.8.0](https://github.com/johnlindquist/pack/compare/v3.7.0...v3.8.0) (2025-12-08)
 
 
