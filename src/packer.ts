@@ -16,7 +16,7 @@ import { loadGitignore, DEFAULT_IGNORE_PATTERNS, expandWithRelatedFiles } from "
 import { isBinaryFile, countTokens, analyzeFile } from "./analysis.js";
 import { extractContextWindows, formatContextWindows } from "./context.js";
 import { stripComments, minify } from "./processing.js";
-import { createHeader, createFooter, type OutputStyle } from "./formatter.js";
+import { createHeader, createFooter, formatAsJsonl, findAllMatches, type OutputStyle } from "./formatter.js";
 
 const CONCURRENCY_LIMIT = 50;
 
@@ -274,6 +274,12 @@ export class Packer {
   private async processFiles(files: string[], candidatesFound: number): Promise<PackResult> {
     const { options, pattern } = this;
     const cwd = process.cwd();
+
+    // Handle JSONL format separately
+    if (options.outputStyle === "jsonl") {
+      return this.processFilesAsJsonl(files, candidatesFound);
+    }
+
     const relativePaths = files.map(p => path.relative(cwd, p));
     const limit = pLimit(CONCURRENCY_LIMIT);
 
@@ -370,6 +376,35 @@ export class Packer {
     return {
       output,
       files: fileSizes,
+      totalTokens,
+      totalChars,
+      totalMatchCount,
+      totalWindowCount,
+      matchedFiles: files,
+      candidatesFound,
+    };
+  }
+
+  /**
+   * Process files and generate JSONL output
+   */
+  private async processFilesAsJsonl(files: string[], candidatesFound: number): Promise<PackResult> {
+    const { options, pattern } = this;
+    const cwd = process.cwd();
+
+    const { output, stats, totalTokens, totalChars } = await formatAsJsonl(files, cwd, {
+      style: options.outputStyle,
+      pattern,
+      stripComments: options.stripComments,
+      minify: options.minify,
+    });
+
+    const totalMatchCount = stats.reduce((sum, s) => sum + (s.matchCount || 0), 0);
+    const totalWindowCount = stats.reduce((sum, s) => sum + (s.windowCount || 0), 0);
+
+    return {
+      output,
+      files: stats,
       totalTokens,
       totalChars,
       totalMatchCount,

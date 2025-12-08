@@ -85,7 +85,7 @@ export type ContextWindow = {
 // Output & Formatting Types
 // ============================================================================
 
-export type OutputStyle = "xml" | "markdown" | "plain";
+export type OutputStyle = "xml" | "markdown" | "plain" | "jsonl";
 
 export type FormatOptions = {
   style: OutputStyle;
@@ -103,6 +103,20 @@ export type FileStats = {
   tokens: number;
   matchCount?: number;
   windowCount?: number;
+};
+
+/**
+ * JSONL output object - one per file
+ */
+export type JsonlFileEntry = {
+  path: string;
+  content: string;
+  tokens: number;
+  matches: Array<{
+    line: number;
+    column: number;
+    match: string;
+  }>;
 };
 
 // ============================================================================

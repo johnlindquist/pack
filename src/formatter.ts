@@ -8,10 +8,10 @@ import { Writable } from "node:stream";
 import { extractContextWindows, formatContextWindows } from "./context.js";
 import { countTokens } from "./analysis.js";
 import { stripComments, minify } from "./processing.js";
-import type { OutputStyle, FormatOptions, FileStats } from "./types.js";
+import type { OutputStyle, FormatOptions, FileStats, JsonlFileEntry, MatchPosition } from "./types.js";
 
 // Re-export types for convenience
-export type { OutputStyle, FormatOptions, FileStats } from "./types.js";
+export type { OutputStyle, FormatOptions, FileStats, JsonlFileEntry } from "./types.js";
 
 /**
  * Create output header
@@ -301,6 +301,123 @@ export async function formatToString(
   return {
     output: buffer.toString(),
     stats: fileStats,
+    totalTokens,
+    totalChars
+  };
+}
+
+/**
+ * Find all matches of a pattern in content
+ * Returns array of match positions
+ */
+export function findAllMatches(content: string, pattern: RegExp): MatchPosition[] {
+  const matches: MatchPosition[] = [];
+  const lines = content.split('\n');
+
+  // Create a new regex with global flag to find all matches
+  const globalPattern = new RegExp(pattern.source, pattern.flags.includes('g') ? pattern.flags : pattern.flags + 'g');
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    let match: RegExpExecArray | null;
+
+    // Reset lastIndex for each line
+    globalPattern.lastIndex = 0;
+
+    while ((match = globalPattern.exec(line)) !== null) {
+      matches.push({
+        line: lineIndex + 1,
+        column: match.index,
+        match: match[0]
+      });
+
+      // Prevent infinite loop for zero-length matches
+      if (match[0].length === 0) {
+        globalPattern.lastIndex++;
+      }
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * Format a single file as a JSONL entry object
+ */
+export async function formatFileAsJsonl(
+  filePath: string,
+  relPath: string,
+  options: FormatOptions
+): Promise<{ entry: JsonlFileEntry; stats: FileStats }> {
+  let content = await fs.readFile(filePath, 'utf8');
+
+  // Apply processing
+  if (options.stripComments) {
+    const ext = path.extname(relPath);
+    content = stripComments(content, ext);
+  }
+  if (options.minify) {
+    content = minify(content);
+  }
+
+  // Find matches if pattern provided
+  const matches: MatchPosition[] = options.pattern
+    ? findAllMatches(content, options.pattern)
+    : [];
+
+  // Calculate tokens on the content
+  const tokens = countTokens(content);
+
+  const entry: JsonlFileEntry = {
+    path: relPath,
+    content,
+    tokens,
+    matches
+  };
+
+  const stats: FileStats = {
+    path: relPath,
+    size: content.length,
+    tokens,
+    matchCount: matches.length,
+    windowCount: 0
+  };
+
+  return { entry, stats };
+}
+
+/**
+ * Format files as newline-delimited JSON (JSONL)
+ * Each line is a valid JSON object with path, content, tokens, and matches
+ */
+export async function formatAsJsonl(
+  files: string[],
+  cwd: string,
+  options: FormatOptions
+): Promise<{ output: string; stats: FileStats[]; totalTokens: number; totalChars: number }> {
+  const relativePaths = files.map(f => path.relative(cwd, f));
+  const lines: string[] = [];
+  const stats: FileStats[] = [];
+  let totalTokens = 0;
+  let totalChars = 0;
+
+  for (let i = 0; i < files.length; i++) {
+    const { entry, stats: fileStats } = await formatFileAsJsonl(
+      files[i],
+      relativePaths[i],
+      options
+    );
+
+    // JSON.stringify handles proper escaping of content
+    lines.push(JSON.stringify(entry));
+    stats.push(fileStats);
+    totalTokens += fileStats.tokens;
+    totalChars += fileStats.size;
+  }
+
+  return {
+    output: lines.join('\n'),
+    stats,
     totalTokens,
     totalChars
   };
