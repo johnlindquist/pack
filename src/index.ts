@@ -14,7 +14,7 @@ import * as path from "node:path";
 import { createWriteStream } from "node:fs";
 import { glob } from "glob";
 import { Minimatch } from "minimatch";
-import { checkbox, confirm } from "@inquirer/prompts";
+import { checkbox, confirm, input } from "@inquirer/prompts";
 import { createPrompt, useState, useKeypress, isEnterKey, isSpaceKey, isUpKey, isDownKey } from "@inquirer/core";
 import pLimit from "p-limit";
 
@@ -877,18 +877,22 @@ async function main() {
       matched.push(...selected);
       console.log(`\n✅ Selected ${matched.length} file(s) — ${formatTokenCount(selectedTokens)} tokens\n`);
 
-      // Ask about saving .ini config
-      const saveConfig = await confirm({
-        message: "Save selection as .ini config file?",
-        default: false,
+      // Ask about saving .ini config (empty = skip, default = pack-config.ini)
+      const configFilename = await input({
+        message: "Save as .ini config (clear to skip):",
+        default: "pack-config.ini",
       });
 
-      if (saveConfig) {
+      if (configFilename && configFilename.trim()) {
+        let filename = configFilename.trim();
+        if (!filename.endsWith('.ini')) {
+          filename += '.ini';
+        }
         const configContent = generateIniConfig(selected, parsed);
-        const configPath = path.join(process.cwd(), "pack-selection.ini");
+        const configPath = path.join(process.cwd(), filename);
         await fs.writeFile(configPath, configContent, "utf8");
         console.log(`\n💾 Saved config to: ${configPath}`);
-        console.log(`   Run again with: packx -f ${path.basename(configPath)}\n`);
+        console.log(`   Run again with: packx -f ${filename}\n`);
       }
     } catch (error: any) {
       if (error.name === "ExitPromptError") {
