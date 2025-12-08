@@ -311,8 +311,8 @@ async function main() {
  * Handle output: write to file, stdout, or clipboard
  */
 async function handleOutput(
-  result: { output: string; files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[] },
-  options: { toStdout: boolean; outputFile?: string; copyToClipboard: boolean; contextLines?: number },
+  result: { output: string; files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[]; chunks?: any[] },
+  options: { toStdout: boolean; outputFile?: string; copyToClipboard: boolean; contextLines?: number; maxTokens?: number },
   log: (msg: string) => void
 ) {
   const summaryOnly = !options.toStdout && !options.outputFile && !options.copyToClipboard;
@@ -331,21 +331,69 @@ async function handleOutput(
     }
   }
 
-  // Write output
-  if (options.toStdout) {
-    process.stdout.write(result.output);
-  } else if (options.outputFile && !summaryOnly) {
-    await fs.writeFile(options.outputFile, result.output, 'utf8');
-    console.log(`\n✅ Successfully packed ${result.matchedFiles.length} file(s) to ${options.outputFile}`);
-  }
+  // Handle chunked output
+  if (result.chunks && result.chunks.length > 1) {
+    log(`\n📦 Output split into ${result.chunks.length} chunks (max ${options.maxTokens} tokens each)`);
 
-  // Handle clipboard
-  if (options.copyToClipboard && !options.toStdout) {
-    const success = await copyToClipboard(result.output);
-    if (success) {
-      console.log('📋 Copied to clipboard!');
-    } else {
-      console.log('⚠️  Could not copy to clipboard');
+    if (options.toStdout) {
+      // For stdout, output all chunks with separators
+      for (const chunk of result.chunks) {
+        process.stdout.write(`\n${'='.repeat(60)}\n`);
+        process.stdout.write(`CHUNK ${chunk.chunkNumber} of ${chunk.totalChunks}\n`);
+        process.stdout.write(`${'='.repeat(60)}\n\n`);
+        process.stdout.write(chunk.output);
+      }
+    } else if (options.outputFile && !summaryOnly) {
+      // Write multiple files: output-1.xml, output-2.xml, etc.
+      const ext = path.extname(options.outputFile);
+      const base = options.outputFile.slice(0, -ext.length);
+
+      const writtenFiles: string[] = [];
+      for (const chunk of result.chunks) {
+        const chunkFile = `${base}-${chunk.chunkNumber}${ext}`;
+        await fs.writeFile(chunkFile, chunk.output, 'utf8');
+        writtenFiles.push(chunkFile);
+      }
+
+      console.log(`\n✅ Successfully packed ${result.matchedFiles.length} file(s) into ${result.chunks.length} chunks:`);
+      for (const file of writtenFiles) {
+        console.log(`   📄 ${file}`);
+      }
+    }
+
+    // Handle clipboard for chunked output (copy first chunk only with warning)
+    if (options.copyToClipboard && !options.toStdout) {
+      const success = await copyToClipboard(result.chunks[0].output);
+      if (success) {
+        console.log(`📋 Copied chunk 1 of ${result.chunks.length} to clipboard (use output files for all chunks)`);
+      } else {
+        console.log('⚠️  Could not copy to clipboard');
+      }
+    }
+
+    // Print chunk summary
+    log(`\n📊 Chunk Summary:`);
+    log(`────────────────`);
+    for (const chunk of result.chunks) {
+      log(`  Chunk ${chunk.chunkNumber}: ${formatTokenCount(chunk.tokens)} tokens, ${chunk.files.length} files`);
+    }
+  } else {
+    // Standard single output
+    if (options.toStdout) {
+      process.stdout.write(result.output);
+    } else if (options.outputFile && !summaryOnly) {
+      await fs.writeFile(options.outputFile, result.output, 'utf8');
+      console.log(`\n✅ Successfully packed ${result.matchedFiles.length} file(s) to ${options.outputFile}`);
+    }
+
+    // Handle clipboard
+    if (options.copyToClipboard && !options.toStdout) {
+      const success = await copyToClipboard(result.output);
+      if (success) {
+        console.log('📋 Copied to clipboard!');
+      } else {
+        console.log('⚠️  Could not copy to clipboard');
+      }
     }
   }
 

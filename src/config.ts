@@ -363,6 +363,10 @@ export async function resolveConfig(argv: string[]): Promise<{
   // Parse prompt text
   const promptParts = normalizeStrings((parsed as any).prompt ?? (parsed as any).p).filter(Boolean);
 
+  // Parse max-tokens
+  const maxTokensRaw = parsed["max-tokens"] || (parsed as any).M;
+  const maxTokens = maxTokensRaw ? parseInt(String(maxTokensRaw), 10) : undefined;
+
   const options: PackerOptions = {
     roots: positionalRoots.length ? positionalRoots : ['.'],
     searchStrings,
@@ -386,6 +390,7 @@ export async function resolveConfig(argv: string[]): Promise<{
     previewOnly: Boolean(parsed.preview),
     interactive: Boolean(parsed.interactive || parsed.I),
     promptText: promptParts.length > 0 ? promptParts.join('\n\n') : undefined,
+    maxTokens: maxTokens && !isNaN(maxTokens) ? maxTokens : undefined,
   };
 
   return { options, parsed, shouldExit: null };

@@ -30,6 +30,7 @@ export type Argv = mri.Argv & {
   lines?: number;                  // -l
   preview?: boolean;               // --preview
   stdout?: boolean;
+  "max-tokens"?: number;           // --max-tokens
 
   // Processing
   "strip-comments"?: boolean;      // --strip-comments
@@ -180,10 +181,24 @@ export type PackerOptions = {
   copyToClipboard: boolean;
   toStdout: boolean;
   previewOnly: boolean;
+  maxTokens?: number;  // Token limit for output splitting
 
   // Interactive
   interactive: boolean;
 
   // Prompt/instructions
   promptText?: string;
+};
+
+// ============================================================================
+// Chunked Output Types
+// ============================================================================
+
+export type OutputChunk = {
+  chunkNumber: number;
+  totalChunks: number;
+  output: string;
+  files: FileStats[];
+  tokens: number;
+  chars: number;
 };
