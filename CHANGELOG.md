@@ -1,3 +1,20 @@
+# [4.0.0](https://github.com/johnlindquist/pack/compare/v3.8.1...v4.0.0) (2025-12-08)
+
+
+* feat!: remove repomix dependency, add native comment stripping and minification ([9f61ce7](https://github.com/johnlindquist/pack/commit/9f61ce7da05639bb430b77e7e196544545041c7d))
+
+
+### BREAKING CHANGES
+
+* repomix is no longer a dependency. Pack now handles all
+processing natively.
+
+- Add src/processing.ts with stripComments() and minify() functions
+- Add --strip-comments, --no-comments, --minify CLI flags
+- Redesign CLI help with grouped flag categories
+- Remove buildRepomixPassthroughArgs (no longer needed)
+- Update version to 4.0.0
+
 ## [3.8.1](https://github.com/johnlindquist/pack/compare/v3.8.0...v3.8.1) (2025-12-08)
 
 
