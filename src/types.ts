@@ -57,11 +57,21 @@ export type Argv = mri.Argv & {
 // Config Types
 // ============================================================================
 
+/**
+ * A transform rule for content modification
+ * Pattern is a regex, replacement is the replacement string
+ */
+export type TransformRule = {
+  pattern: RegExp;
+  replacement: string;
+};
+
 export type ParsedConfig = {
   search: string[];
   extensions: string[];
   exclude: string[];
   files: string[];  // Explicit file paths from [files] section
+  transforms: TransformRule[];  // Content transformation rules
 };
 
 // ============================================================================
@@ -95,6 +105,7 @@ export type FormatOptions = {
   summaryOnly?: boolean;
   stripComments?: boolean;
   minify?: boolean;
+  transforms?: TransformRule[];
 };
 
 export type FileStats = {
@@ -173,6 +184,7 @@ export type PackerOptions = {
   contextLines?: number;
   smartContext: boolean;
   includeRelated: boolean;
+  transforms: TransformRule[];  // Content transformation rules
 
   // Output
   outputStyle: OutputStyle;

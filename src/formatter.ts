@@ -7,7 +7,7 @@ import * as path from "node:path";
 import { Writable } from "node:stream";
 import { extractContextWindows, formatContextWindows } from "./context.js";
 import { countTokens } from "./analysis.js";
-import { stripComments, minify } from "./processing.js";
+import { stripComments, minify, applyTransforms } from "./processing.js";
 import type { OutputStyle, FormatOptions, FileStats } from "./types.js";
 
 // Re-export types for convenience
@@ -86,7 +86,10 @@ export async function formatFile(
   const ext = path.extname(relPath);
   const extLabel = ext.slice(1) || 'txt';
 
-  // Apply processing
+  // Apply processing: transforms first (for redaction), then comments/minify
+  if (options.transforms && options.transforms.length > 0) {
+    content = applyTransforms(content, options.transforms);
+  }
   if (options.stripComments) {
     content = stripComments(content, ext);
   }

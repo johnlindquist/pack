@@ -5,7 +5,7 @@
 
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import type { ParsedConfig, PackerOptions, Argv, OutputStyle } from "./types.js";
+import type { ParsedConfig, PackerOptions, Argv, OutputStyle, TransformRule } from "./types.js";
 import { parseArgs } from "./cli.js";
 import { parseCSV, normalizeStrings, toExtSet, getDefaultExtensions } from "./utils.js";
 import { hasGlobChars, expandPattern } from "./scanner.js";
@@ -19,6 +19,39 @@ export async function parseConfigFile(filePath: string): Promise<ParsedConfig> {
 }
 
 /**
+ * Parse a transform rule line in format: pattern = replacement
+ * Pattern is treated as regex, replacement is literal string
+ * Supports /regex/flags = replacement format for explicit regex with flags
+ */
+export function parseTransformRule(line: string): TransformRule | null {
+  const eqIndex = line.indexOf('=');
+  if (eqIndex === -1) return null;
+
+  const patternPart = line.slice(0, eqIndex).trim();
+  const replacement = line.slice(eqIndex + 1).trim();
+
+  if (!patternPart) return null;
+
+  try {
+    let pattern: RegExp;
+
+    // Check for explicit regex format: /pattern/flags
+    const regexMatch = patternPart.match(/^\/(.+)\/([gimsuy]*)$/);
+    if (regexMatch) {
+      pattern = new RegExp(regexMatch[1], regexMatch[2] || 'g');
+    } else {
+      // Treat as literal pattern with global flag
+      pattern = new RegExp(patternPart, 'g');
+    }
+
+    return { pattern, replacement };
+  } catch {
+    // Invalid regex pattern
+    return null;
+  }
+}
+
+/**
  * Parse config content (sync version for testing)
  */
 export function parseConfigContent(content: string): ParsedConfig {
@@ -26,11 +59,12 @@ export function parseConfigContent(content: string): ParsedConfig {
     search: [],
     extensions: [],
     exclude: [],
-    files: []
+    files: [],
+    transforms: []
   };
 
   const lines = content.split('\n');
-  let currentSection: 'search' | 'extensions' | 'exclude' | 'files' | null = null;
+  let currentSection: 'search' | 'extensions' | 'exclude' | 'files' | 'transforms' | null = null;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -55,10 +89,21 @@ export function parseConfigContent(content: string): ParsedConfig {
       currentSection = 'files';
       continue;
     }
+    if (trimmed === '[transforms]' || trimmed === '[transform]' || trimmed === '[redact]') {
+      currentSection = 'transforms';
+      continue;
+    }
 
     // Add line to current section
     if (currentSection) {
-      config[currentSection].push(trimmed);
+      if (currentSection === 'transforms') {
+        const rule = parseTransformRule(trimmed);
+        if (rule) {
+          config.transforms.push(rule);
+        }
+      } else {
+        config[currentSection].push(trimmed);
+      }
     }
   }
 
@@ -156,6 +201,18 @@ export function createConfigTemplate(): string {
 # **/*.test.ts        # Test files anywhere
 # examples/**         # Everything under examples
 # !important.test.ts  # Exception: include this test file
+
+[transforms]
+# Content transformation rules for redacting sensitive information
+# Format: pattern = replacement
+# Patterns are treated as regex (with global flag by default)
+# Use /pattern/flags format for explicit regex with custom flags
+#
+# Examples:
+# sk-[a-zA-Z0-9]{48} = [REDACTED_API_KEY]         # OpenAI API keys
+# ghp_[a-zA-Z0-9]{36} = [REDACTED_GITHUB_TOKEN]   # GitHub tokens
+# password\\s*=\\s*"[^"]+" = password="[REDACTED]" # Password assignments
+# /secret/i = [SECRET]                             # Case-insensitive match
 `;
 }
 
@@ -225,6 +282,7 @@ export async function resolveConfig(argv: string[]): Promise<{
   let extensions: Set<string>;
   let excludePatterns: string[] = [];
   let explicitFiles: string[] = [];
+  let transforms: TransformRule[] = [];
 
   const caseSensitive = Boolean(parsed["case-sensitive"] || parsed.C);
   const useRegex = Boolean(parsed.regex || parsed.R);
@@ -267,6 +325,7 @@ export async function resolveConfig(argv: string[]): Promise<{
     searchStrings = [...config.search];
     extensions = toExtSet(config.extensions);
     excludePatterns = [...config.exclude];
+    transforms = [...config.transforms];
 
     if (config.files.length > 0) {
       explicitFiles = config.files.map(f => path.resolve(process.cwd(), f));
@@ -379,6 +438,7 @@ export async function resolveConfig(argv: string[]): Promise<{
     contextLines: parsed.lines || parsed.l,
     smartContext,
     includeRelated: Boolean(parsed.related || parsed.r),
+    transforms,
     outputStyle: ((parsed as any).format || (parsed as any).style || 'xml') as OutputStyle,
     outputFile,
     copyToClipboard,
@@ -411,6 +471,7 @@ function createDefaultOptions(): PackerOptions {
     contextLines: undefined,
     smartContext: false,
     includeRelated: false,
+    transforms: [],
     outputStyle: 'xml',
     outputFile: undefined,
     copyToClipboard: false,

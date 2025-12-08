@@ -15,7 +15,7 @@ import { isGitRepository, getGitStagedFiles, getGitDirtyFiles, getGitDiffFiles }
 import { loadGitignore, DEFAULT_IGNORE_PATTERNS, expandWithRelatedFiles } from "./scanner.js";
 import { isBinaryFile, countTokens, analyzeFile } from "./analysis.js";
 import { extractContextWindows, formatContextWindows } from "./context.js";
-import { stripComments, minify } from "./processing.js";
+import { stripComments, minify, applyTransforms } from "./processing.js";
 import { createHeader, createFooter, type OutputStyle } from "./formatter.js";
 
 const CONCURRENCY_LIMIT = 50;
@@ -290,7 +290,10 @@ export class Packer {
             const ext = path.extname(relPath);
             const extLabel = ext.slice(1) || 'txt';
 
-            // Apply processing
+            // Apply processing: transforms first (for redaction), then comments/minify
+            if (options.transforms && options.transforms.length > 0) {
+              content = applyTransforms(content, options.transforms);
+            }
             if (options.stripComments) {
               content = stripComments(content, ext);
             }

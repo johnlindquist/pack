@@ -56,6 +56,7 @@ export {
 export {
   parseConfigFile,
   parseConfigContent,
+  parseTransformRule,
   generateIniConfig,
   createConfigTemplate,
   classifyPositionalArgs,
@@ -112,7 +113,8 @@ export {
 // Re-export from processing
 export {
   stripComments,
-  minify
+  minify,
+  applyTransforms
 } from "./processing.js";
 
 // Re-export from packer

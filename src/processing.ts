@@ -1,6 +1,8 @@
 /**
- * Content processing utilities: comment stripping and minification
+ * Content processing utilities: comment stripping, minification, and transforms
  */
+
+import type { TransformRule } from "./types.js";
 
 /**
  * Strip comments from code based on file extension
@@ -64,4 +66,30 @@ export function minify(content: string): string {
     .map(line => line.trim())
     .filter(line => line.length > 0)
     .join('\n');
+}
+
+/**
+ * Apply transformation rules to content
+ * Useful for redacting sensitive information like API keys, passwords, etc.
+ *
+ * Transforms are applied in order, each operating on the result of the previous.
+ *
+ * @param content - The content to transform
+ * @param transforms - Array of transform rules (pattern + replacement)
+ * @returns Transformed content
+ */
+export function applyTransforms(content: string, transforms: TransformRule[]): string {
+  if (!transforms || transforms.length === 0) {
+    return content;
+  }
+
+  let result = content;
+  for (const { pattern, replacement } of transforms) {
+    // Reset lastIndex for global patterns to ensure fresh matching
+    if (pattern.global) {
+      pattern.lastIndex = 0;
+    }
+    result = result.replace(pattern, replacement);
+  }
+  return result;
 }
