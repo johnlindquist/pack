@@ -28,6 +28,7 @@ export type PackResult = {
   totalMatchCount: number;
   totalWindowCount: number;
   matchedFiles: string[];
+  candidatesFound: number; // Number of files found before content filtering
 };
 
 /**
@@ -52,14 +53,14 @@ export class Packer {
     const candidates = await this.discoverFiles();
 
     if (candidates.length === 0) {
-      return this.emptyResult();
+      return this.emptyResult(0);
     }
 
     // 2. Filter by content
     let matched = await this.filterByContent(candidates);
 
     if (matched.length === 0) {
-      return this.emptyResult();
+      return this.emptyResult(candidates.length);
     }
 
     // 3. Expand with related files if requested
@@ -68,7 +69,7 @@ export class Packer {
     }
 
     // 4. Process and format
-    return this.processFiles(matched);
+    return this.processFiles(matched, candidates.length);
   }
 
   /**
@@ -270,7 +271,7 @@ export class Packer {
   /**
    * Process matched files and generate output
    */
-  private async processFiles(files: string[]): Promise<PackResult> {
+  private async processFiles(files: string[], candidatesFound: number): Promise<PackResult> {
     const { options, pattern } = this;
     const cwd = process.cwd();
     const relativePaths = files.map(p => path.relative(cwd, p));
@@ -374,13 +375,14 @@ export class Packer {
       totalMatchCount,
       totalWindowCount,
       matchedFiles: files,
+      candidatesFound,
     };
   }
 
   /**
    * Create empty result
    */
-  private emptyResult(): PackResult {
+  private emptyResult(candidatesFound: number): PackResult {
     return {
       output: '',
       files: [],
@@ -389,6 +391,7 @@ export class Packer {
       totalMatchCount: 0,
       totalWindowCount: 0,
       matchedFiles: [],
+      candidatesFound,
     };
   }
 
