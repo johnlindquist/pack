@@ -2,18 +2,10 @@
  * Smart context extraction with indentation awareness
  */
 
-export type MatchPosition = {
-  line: number;
-  column: number;
-  match: string;
-};
+import type { MatchPosition, ContextWindow } from "./types.js";
 
-export type ContextWindow = {
-  startLine: number;
-  endLine: number;
-  lines: string[];
-  matches: MatchPosition[];
-};
+// Re-export types for convenience
+export type { MatchPosition, ContextWindow } from "./types.js";
 
 /**
  * Find all matches of a pattern in content
@@ -254,30 +246,5 @@ export function formatContextWindows(windows: ContextWindow[], _filePath: string
   return output;
 }
 
-/**
- * Escape regex special characters for safe substring search
- */
-export function escRegex(lit: string): string {
-  return lit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/**
- * Build regex pattern from search strings
- */
-export function buildPattern(
-  strings: string[],
-  caseSensitive: boolean,
-  useRawRegex: boolean
-): RegExp | null {
-  if (strings.length === 0) return null;
-
-  const flags = caseSensitive ? "" : "i";
-
-  if (useRawRegex) {
-    // Use strings as-is (raw regex)
-    return new RegExp(strings.join("|"), flags);
-  } else {
-    // Escape for literal matching
-    return new RegExp(strings.map(escRegex).join("|"), flags);
-  }
-}
+// Re-export utility functions for backward compatibility
+export { escRegex, buildPattern } from "./utils.js";

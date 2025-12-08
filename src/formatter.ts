@@ -5,29 +5,13 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { Writable } from "node:stream";
-import { extractContextWindows, formatContextWindows, type ContextWindow } from "./context.js";
+import { extractContextWindows, formatContextWindows } from "./context.js";
 import { countTokens } from "./analysis.js";
 import { stripComments, minify } from "./processing.js";
+import type { OutputStyle, FormatOptions, FileStats } from "./types.js";
 
-export type OutputStyle = "xml" | "markdown" | "plain";
-
-export type FormatOptions = {
-  style: OutputStyle;
-  contextLines?: number;
-  pattern?: RegExp | null;
-  smartContext?: boolean;
-  summaryOnly?: boolean;
-  stripComments?: boolean;
-  minify?: boolean;
-};
-
-export type FileStats = {
-  path: string;
-  size: number;
-  tokens: number;
-  matchCount?: number;
-  windowCount?: number;
-};
+// Re-export types for convenience
+export type { OutputStyle, FormatOptions, FileStats } from "./types.js";
 
 /**
  * Create output header

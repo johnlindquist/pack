@@ -4,6 +4,10 @@
 
 import { promises as fs } from "node:fs";
 import { getEncoding, type Tiktoken } from "js-tiktoken";
+import type { FileAnalysis } from "./types.js";
+
+// Re-export type for convenience
+export type { FileAnalysis } from "./types.js";
 
 // Lazy-loaded tiktoken encoder
 let encoder: Tiktoken | null = null;
@@ -100,16 +104,6 @@ export function isBinaryContent(content: Buffer | string): boolean {
 
   return false;
 }
-
-/**
- * File size and token analysis result
- */
-export type FileAnalysis = {
-  path: string;
-  size: number;
-  tokens: number;
-  isBinary: boolean;
-};
 
 /**
  * Analyze a file for size and token count

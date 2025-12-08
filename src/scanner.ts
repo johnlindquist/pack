@@ -248,3 +248,77 @@ export function expandPattern(p: string): string[] {
 
   return [...new Set(patterns)];
 }
+
+// ============================================================================
+// Related Files Discovery
+// ============================================================================
+
+/**
+ * Find related files for a given file path
+ * Looks for files with the same base name but different extensions/suffixes
+ * (e.g., component.tsx -> component.test.tsx, component.stories.tsx)
+ */
+export async function findRelatedFiles(
+  filePath: string,
+  existingFiles?: Set<string>
+): Promise<string[]> {
+  const dir = path.dirname(filePath);
+  const ext = path.extname(filePath);
+  const basename = path.basename(filePath, ext);
+  const baseParts = basename.split(".");
+  const coreName = baseParts[0];
+
+  const related: string[] = [];
+
+  try {
+    const entries = await fs.readdir(dir);
+
+    for (const entry of entries) {
+      const entryPath = path.join(dir, entry);
+
+      if (entryPath === filePath) continue;
+      if (existingFiles?.has(entryPath)) continue;
+
+      const entryExt = path.extname(entry);
+      const entryBasename = path.basename(entry, entryExt);
+      const entryCoreName = entryBasename.split(".")[0];
+
+      if (entryCoreName === coreName) {
+        try {
+          const stat = await fs.stat(entryPath);
+          if (stat.isFile()) {
+            related.push(entryPath);
+          }
+        } catch {
+          // Skip if can't stat
+        }
+      }
+    }
+  } catch {
+    // Directory read failed
+  }
+
+  return related;
+}
+
+/**
+ * Expand a list of files to include their related files
+ */
+export async function expandWithRelatedFiles(
+  files: string[]
+): Promise<string[]> {
+  const existing = new Set(files);
+  const expanded = [...files];
+
+  for (const file of files) {
+    const related = await findRelatedFiles(file, existing);
+    for (const r of related) {
+      if (!existing.has(r)) {
+        existing.add(r);
+        expanded.push(r);
+      }
+    }
+  }
+
+  return expanded;
+}

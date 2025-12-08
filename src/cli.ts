@@ -3,50 +3,10 @@
  */
 
 import mri from "mri";
+import type { Argv } from "./types.js";
 
-export type Argv = mri.Argv & {
-  // Search & Filter
-  strings?: string | string[];     // -s
-  "exclude-strings"?: string | string[]; // -S
-  include?: string | string[];     // -i
-  exclude?: string | string[];     // -x
-  regex?: boolean;                 // -R
-  "case-sensitive"?: boolean;      // -C
-
-  // Git
-  staged?: boolean;
-  diff?: boolean;
-  dirty?: boolean;
-
-  // Output
-  output?: string;                 // -o
-  format?: string;                 // -f
-  copy?: boolean;                  // -c
-  lines?: number;                  // -l
-  preview?: boolean;               // --preview
-  stdout?: boolean;
-
-  // Processing
-  "strip-comments"?: boolean;      // --strip-comments
-  "no-comments"?: boolean;         // --no-comments (alias)
-  minify?: boolean;                // --minify
-  related?: boolean;               // -r
-
-  // Instructions
-  instruction?: string;
-  prompt?: string | string[];      // -p
-
-  // Meta
-  config?: string;
-  file?: string;                   // -f (legacy alias for config)
-  interactive?: boolean;           // -I
-  help?: boolean;                  // -h
-  version?: boolean;               // -v
-
-  // Legacy mappings
-  extensions?: string | string[];
-  "exclude-extensions"?: string | string[];
-};
+// Re-export the Argv type for convenience
+export type { Argv } from "./types.js";
 
 export function parseArgs(args: string[]): Argv {
   return mri(args, {
