@@ -134,7 +134,7 @@ describe("E2E: packx CLI", () => {
       const { stdout, code } = await runCLI(["--help"]);
       expect(code).toBe(0);
       expect(stdout).toContain("PACKX");
-      expect(stdout).toContain("Smart File Filter");
+      expect(stdout).toContain("AI Context Bundler");
       expect(stdout).toContain("--strings");
     });
 

@@ -57,6 +57,12 @@ export {
   type Argv
 } from "./cli.js";
 
+// Export processing utils
+export {
+  stripComments,
+  minify
+} from "./processing.js";
+
 // Type definitions for backward compatibility
 export type ParsedConfig = {
   search: string[];
@@ -135,71 +141,6 @@ export function contentContainsStrings(
 
   // Then check if content contains required strings (if provided)
   return pattern ? pattern.test(content) : true;
-}
-
-/**
- * Build passthrough arguments for repomix from parsed CLI args
- */
-export function buildRepomixPassthroughArgs(parsed: Record<string, any>): string[] {
-  const passthrough: string[] = [];
-  const reserved = new Set([
-    "_",
-    "strings",
-    "exclude-strings",
-    "extensions",
-    "exclude-extensions",
-    "file",
-    "lines",
-    "prompt",
-    "prompt-path",
-    "include",
-    "ignore",
-    "i",
-    "case-sensitive",
-    "copy",
-    "c",
-    "s",
-    "S",
-    "e",
-    "x",
-    "f",
-    "l",
-    "p",
-    "P",
-    "C",
-    "stdout",
-    "preview",
-    "help",
-    "h",
-    "version",
-    "v",
-    "regex",
-    "R",
-    "smart-context"
-  ]);
-
-  for (const [key, val] of Object.entries(parsed)) {
-    if (reserved.has(key)) continue;
-    if (val === undefined) continue;
-
-    const flag = key.length === 1 ? `-${key}` : `--${key}`;
-
-    if (Array.isArray(val)) {
-      for (const v of val) {
-        if (typeof v === "boolean") {
-          if (v) passthrough.push(flag);
-        } else {
-          passthrough.push(flag, String(v));
-        }
-      }
-    } else if (typeof val === "boolean") {
-      if (val) passthrough.push(flag);
-    } else {
-      passthrough.push(flag, String(val));
-    }
-  }
-
-  return passthrough;
 }
 
 /**

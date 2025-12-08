@@ -7,7 +7,6 @@ import {
   extractContextWindows,
   formatContextWindows,
   contentContainsStrings,
-  buildRepomixPassthroughArgs,
   normalizeStrings,
   parseConfigContent,
   getDefaultExtensions,
@@ -262,44 +261,6 @@ describe("contentContainsStrings", () => {
 
   test("returns true when both patterns are null", () => {
     expect(contentContainsStrings("hello world", null, null)).toBe(true);
-  });
-});
-
-describe("buildRepomixPassthroughArgs", () => {
-  test("passes through non-reserved boolean flags", () => {
-    const args = buildRepomixPassthroughArgs({ compress: true });
-    expect(args).toEqual(["--compress"]);
-  });
-
-  test("passes through non-reserved string flags", () => {
-    const args = buildRepomixPassthroughArgs({ style: "markdown" });
-    expect(args).toEqual(["--style", "markdown"]);
-  });
-
-  test("filters out reserved flags", () => {
-    const args = buildRepomixPassthroughArgs({
-      strings: ["foo"],
-      s: ["bar"],
-      extensions: "ts",
-      help: true,
-      compress: true
-    });
-    expect(args).toEqual(["--compress"]);
-  });
-
-  test("handles array values", () => {
-    const args = buildRepomixPassthroughArgs({ custom: ["a", "b"] });
-    expect(args).toEqual(["--custom", "a", "--custom", "b"]);
-  });
-
-  test("handles single-char flags", () => {
-    const args = buildRepomixPassthroughArgs({ o: "output.md" });
-    expect(args).toEqual(["-o", "output.md"]);
-  });
-
-  test("ignores undefined values", () => {
-    const args = buildRepomixPassthroughArgs({ foo: undefined, bar: "value" });
-    expect(args).toEqual(["--bar", "value"]);
   });
 });
 

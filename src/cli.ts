@@ -5,44 +5,47 @@
 import mri from "mri";
 
 export type Argv = mri.Argv & {
-  strings?: string | string[];
-  s?: string | string[];
-  "exclude-strings"?: string | string[];
-  S?: string | string[];
-  extensions?: string;
-  e?: string;
-  "exclude-extensions"?: string;
-  x?: string;
-  file?: string;
-  f?: string;
-  lines?: number;
-  l?: number;
-  prompt?: string | string[];
-  p?: string | string[];
-  "prompt-path"?: string | string[];
-  P?: string | string[];
-  "case-sensitive"?: boolean;
-  C?: boolean;
-  copy?: boolean;
-  c?: boolean;
-  preview?: boolean;
-  help?: boolean;
-  h?: boolean;
-  version?: boolean;
-  v?: boolean;
-  // Git-aware context flags
+  // Search & Filter
+  strings?: string | string[];     // -s
+  "exclude-strings"?: string | string[]; // -S
+  include?: string | string[];     // -i
+  exclude?: string | string[];     // -x
+  regex?: boolean;                 // -R
+  "case-sensitive"?: boolean;      // -C
+
+  // Git
   staged?: boolean;
   diff?: boolean;
   dirty?: boolean;
-  // Interactive selection
-  interactive?: boolean;
-  I?: boolean;
-  // Related files discovery
-  related?: boolean;
-  r?: boolean;
-  // Regex mode
-  regex?: boolean;
-  R?: boolean;
+
+  // Output
+  output?: string;                 // -o
+  format?: string;                 // -f
+  copy?: boolean;                  // -c
+  lines?: number;                  // -l
+  preview?: boolean;               // --preview
+  stdout?: boolean;
+
+  // Processing
+  "strip-comments"?: boolean;      // --strip-comments
+  "no-comments"?: boolean;         // --no-comments (alias)
+  minify?: boolean;                // --minify
+  related?: boolean;               // -r
+
+  // Instructions
+  instruction?: string;
+  prompt?: string | string[];      // -p
+
+  // Meta
+  config?: string;
+  file?: string;                   // -f (legacy alias for config)
+  interactive?: boolean;           // -I
+  help?: boolean;                  // -h
+  version?: boolean;               // -v
+
+  // Legacy mappings
+  extensions?: string | string[];
+  "exclude-extensions"?: string | string[];
 };
 
 export function parseArgs(args: string[]): Argv {
@@ -50,188 +53,95 @@ export function parseArgs(args: string[]): Argv {
     alias: {
       s: "strings",
       S: "exclude-strings",
+      i: "include",
       e: "extensions",
-      x: "exclude-extensions",
-      f: "file",
-      l: "lines",
-      p: "prompt",
-      P: "prompt-path",
-      C: "case-sensitive",
+      x: "exclude",
+      o: "output",
+      f: "format",
       c: "copy",
+      l: "lines",
+      C: "case-sensitive",
+      R: "regex",
       h: "help",
       v: "version",
       I: "interactive",
       r: "related",
-      R: "regex"
+      p: "prompt",
     },
     string: [
       "strings", "s",
       "exclude-strings", "S",
-      "extensions", "e",
-      "exclude-extensions", "x",
-      "file", "f",
-      "prompt", "p",
-      "prompt-path", "P",
-      "include",
-      "ignore", "i"
+      "include", "i", "extensions", "e",
+      "exclude", "x", "exclude-extensions",
+      "output", "o",
+      "format", "f", "style",
+      "config", "file",
+      "prompt", "p", "template",
+      "instruction"
     ],
     boolean: [
+      "regex", "R",
       "case-sensitive", "C",
-      "preview",
       "copy", "c",
-      "help", "h",
-      "version", "v",
-      "stdout",
-      // Git-aware context
+      "strip-comments", "no-comments",
+      "minify",
       "staged",
       "diff",
       "dirty",
-      // Interactive & related
       "interactive", "I",
       "related", "r",
-      // Regex mode
-      "regex", "R"
+      "preview",
+      "help", "h",
+      "version", "v",
+      "stdout"
     ]
   }) as Argv;
 }
 
 export function printHelp(): void {
   const txt = `
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                           PACKX - Smart File Filter                          ║
-║         Bundle only the files you need for focused AI analysis              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+\x1b[1mPACKX\x1b[0m - AI Context Bundler
 
-OVERVIEW
-  Packx filters your repository files by content AND extension, then bundles
-  only matching files for AI consumption. Perfect for providing focused context
-  to LLMs without overwhelming them with irrelevant code.
+\x1b[1mUSAGE\x1b[0m
+  packx [options] [path...]
 
-USAGE
-  packx init [filename]                      Create a config file template
-  packx -s "string" [options] [repomix...]   Search and bundle files
-  packx -f config.txt [options] [repomix...] Use a config file
+\x1b[1mEXAMPLES\x1b[0m
+  packx -s "TODO"                  # Find "TODO" in all code files
+  packx -s "useState" -i tsx       # Find hooks in TSX files
+  packx src/ -i "*.py"             # Pack all Python files in src/
+  packx -s "error" -l 5            # 5 lines of context around errors
 
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                              QUICK START                                     │
-╰──────────────────────────────────────────────────────────────────────────────╯
+\x1b[1mSEARCH & FILTER\x1b[0m
+  -s, --strings <text>     Include files containing text (use multiple times)
+  -S, --exclude-strings    Exclude files containing text
+  -i, --include <glob>     Include filenames/extensions (e.g. "*.ts", "src/")
+  -x, --exclude <glob>     Exclude filenames/extensions
+  -R, --regex              Treat search strings as regex patterns
+  -C, --case-sensitive     Enable case-sensitive search
+      --staged             Include only git staged files
+      --diff               Include only files changed from main
+      --dirty              Include only modified/untracked files
 
-  1. Install packx:
-     npm install -g packx
+\x1b[1mPROCESSING\x1b[0m
+      --strip-comments     Strip comments from code
+      --no-comments        Alias for --strip-comments
+      --minify             Remove empty lines and whitespace
+  -l, --lines <num>        Extract N lines of context around matches
+  -r, --related            Include related files (tests, stories)
+      --instruction <file> Prepend custom instructions
 
-  2. Create a search config:
-     packx init my-search
+\x1b[1mOUTPUT\x1b[0m
+  -o, --output <file>      Write output to file
+  -f, --format <fmt>       Output format: xml, markdown, plain (default: xml)
+  -c, --copy               Copy output to clipboard
+      --stdout             Write to stdout (default if no -o)
+      --preview            Show matching files without packing
 
-  3. Edit the config with your patterns:
-     nano my-search.ini
-
-  4. Run the search:
-     packx -f my-search.ini -o results.md
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                           COMMON USE CASES                                   │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-🔍 FIND ALL TODOS AND FIXMES
-  packx -s "TODO" -s "FIXME" -s "HACK" -s "XXX"
-
-  This searches ALL common code files by default - no need to specify extensions!
-
-📦 BUNDLE REACT HOOKS FOR REVIEW
-  packx -s "useState" -s "useEffect" -s "useCallback" -e "tsx,jsx" -o hooks.md
-
-  Focus on just React/JSX files containing hooks.
-
-🐛 DEBUG WITH CONTEXT LINES
-  packx -s "error" -s "exception" -l 20 --style markdown
-
-  Extract only 20 lines around each error/exception - perfect for debugging!
-
-🔒 SECURITY AUDIT
-  packx -s "apiKey" -s "secret" -s "password" -s "token" \\
-        -e "js,ts,env,json" -x "test.js,spec.js" -o security.xml
-
-  Find sensitive strings, excluding test files.
-
-📋 COPY TO CLIPBOARD
-  packx -s "console.log" --copy
-  packx -s "debugger" -c      # -c is shorthand for --copy
-
-  Instantly copy results to clipboard for pasting into ChatGPT, Claude, etc.
-
-🔤 REGEX SEARCH MODE
-  packx -s "function\\s+\\w+" -R        # Match function declarations
-  packx -s "console\\.(log|warn)" -R    # Match console methods
-
-  Use -R/--regex to enable raw regex patterns instead of literal strings.
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                              OPTIONS REFERENCE                               │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-PACKX OPTIONS
-  -s, --strings STRING        Search string (use multiple times)
-  -S, --exclude-strings       Exclude files containing these strings
-  -e, --extensions EXTS       Include only these extensions (comma-separated)
-  -x, --exclude-extensions    Exclude these patterns (matched from end)
-  -f, --file PATH            Read configuration from file
-  -l, --lines NUMBER         Context lines around matches (default: entire file)
-  -p, --prompt TEXT         Append a Markdown prompt at end of output
-      --prompt-path PATH    Append contents of file as a prompt
-  -C, --case-sensitive       Make search case-sensitive (default: case-insensitive)
-  -R, --regex                Treat search strings as raw regex patterns
-      --preview              List matched files without bundling
-  -h, --help                 Show this help message
-  -v, --version              Show version number
-
-GIT-AWARE CONTEXT (Work-in-Progress Mode)
-      --staged               Bundle only files staged for commit
-      --diff                 Bundle files changed vs main/master branch
-      --dirty                Bundle modified + untracked files in working tree
-
-INTERACTIVE & RELATED FILES
-  -I, --interactive          Interactively select files from matches
-  -r, --related              Include related files (tests, styles, stories)
-
-REPOMIX PASSTHROUGH OPTIONS
-  -o, --output PATH          Output file path (default: repomix-output.xml)
-      --style FORMAT         Output format: xml, markdown, plain
-      --compress             Compress output for smaller size
-  -c, --copy                 Copy output to clipboard
-      --remove-comments      Strip comments from code
-      --token-count-tree     Show token count statistics
-      --instruction-file-path  Custom instructions file
-
-  (All other Repomix flags are automatically passed through)
-
-DEFAULT EXTENSIONS
-  When -e is not specified, packx searches ALL of these by default:
-
-  • Languages: js, jsx, ts, tsx, mjs, cjs, py, rb, go, java, cpp, c, h,
-               rs, swift, kt, scala, php
-  • Frameworks: vue, svelte, astro
-  • Styles: css, scss, less
-  • Config: json, yaml, yml, toml, xml
-  • Docs: md, mdx, txt
-  • Scripts: sh, bash, zsh, fish
-  • Data: sql, graphql, gql
-
-╭──────────────────────────────────────────────────────────────────────────────╮
-│                               ABOUT PACKX                                    │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-  Version: v3.4.0
-  Author: John Lindquist
-  License: MIT
-  Repository: https://github.com/johnlindquist/pack
-
-  Packx bundles files for AI consumption with smart filtering,
-  ensuring you only package what you need. Perfect for focused AI analysis,
-  code reviews, debugging sessions, and codebase exploration.
-
-  Report issues: https://github.com/johnlindquist/pack/issues
-  Star if useful: https://github.com/johnlindquist/pack ⭐
-
+\x1b[1mOTHER\x1b[0m
+  -I, --interactive        Select files interactively
+      --config <file>      Load config file
+  -h, --help               Show this help
+  -v, --version            Show version
 `;
-  process.stdout.write(txt);
+  console.log(txt);
 }

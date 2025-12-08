@@ -35,6 +35,7 @@ import { buildPattern, extractContextWindows, formatContextWindows } from "./con
 import { scanDirectory, filterByContent, loadGitignore, hasGlobChars, expandPattern, DEFAULT_IGNORE_PATTERNS } from "./scanner.js";
 import { countTokens, isBinaryFile, formatTokenCount, getTokenWarning, analyzeFile } from "./analysis.js";
 import { StreamFormatter, StringBufferStream, type OutputStyle } from "./formatter.js";
+import { stripComments, minify } from "./processing.js";
 
 const CONCURRENCY_LIMIT = 50;
 
@@ -506,7 +507,7 @@ async function main() {
     process.exit(0);
   }
   if (parsed.version || parsed.v) {
-    console.log("packx v3.4.0");
+    console.log("packx v4.0.0");
     process.exit(0);
   }
 
@@ -1022,14 +1023,27 @@ async function main() {
     await formatter.writeHeader(matched.length, relativePaths, contextLines);
   }
 
+  // Processing flags
+  const wantStripComments = Boolean(parsed["strip-comments"] || parsed["no-comments"]);
+  const wantMinify = Boolean(parsed.minify);
+
   // Process files in parallel, write sequentially
   const fileResults = await Promise.all(
     matched.map((filePath, index) =>
       limit(async () => {
         const relPath = relativePaths[index];
         try {
-          const content = await fs.readFile(filePath, 'utf8');
-          const ext = path.extname(relPath).slice(1) || 'txt';
+          let content = await fs.readFile(filePath, 'utf8');
+          const ext = path.extname(relPath);
+          const extLabel = ext.slice(1) || 'txt';
+
+          // Apply processing
+          if (wantStripComments) {
+            content = stripComments(content, ext);
+          }
+          if (wantMinify) {
+            content = minify(content);
+          }
 
           let fileOutput = '';
           let matchCount = 0;
@@ -1045,14 +1059,14 @@ async function main() {
               if (outputStyle === "xml") {
                 fileOutput = `<file path="${relPath}" matches="${matchCount}" windows="${windowCount}">\n${formatted}</file>\n\n`;
               } else {
-                fileOutput = `### ${relPath}\n\n**Matches:** ${matchCount} | **Context windows:** ${windowCount}\n\n\`\`\`${ext}\n${formatted}\`\`\`\n\n`;
+                fileOutput = `### ${relPath}\n\n**Matches:** ${matchCount} | **Context windows:** ${windowCount}\n\n\`\`\`${extLabel}\n${formatted}\`\`\`\n\n`;
               }
             }
           } else {
             if (outputStyle === "xml") {
               fileOutput = `<file path="${relPath}">\n${content}\n</file>\n\n`;
             } else {
-              fileOutput = `### ${relPath}\n\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
+              fileOutput = `### ${relPath}\n\n\`\`\`${extLabel}\n${content}\n\`\`\`\n\n`;
             }
           }
 

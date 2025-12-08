@@ -7,6 +7,7 @@ import * as path from "node:path";
 import { Writable } from "node:stream";
 import { extractContextWindows, formatContextWindows, type ContextWindow } from "./context.js";
 import { countTokens } from "./analysis.js";
+import { stripComments, minify } from "./processing.js";
 
 export type OutputStyle = "xml" | "markdown" | "plain";
 
@@ -16,6 +17,8 @@ export type FormatOptions = {
   pattern?: RegExp | null;
   smartContext?: boolean;
   summaryOnly?: boolean;
+  stripComments?: boolean;
+  minify?: boolean;
 };
 
 export type FileStats = {
@@ -95,8 +98,17 @@ export async function formatFile(
   relPath: string,
   options: FormatOptions
 ): Promise<{ output: string; stats: FileStats }> {
-  const content = await fs.readFile(filePath, 'utf8');
-  const ext = path.extname(relPath).slice(1) || 'txt';
+  let content = await fs.readFile(filePath, 'utf8');
+  const ext = path.extname(relPath);
+  const extLabel = ext.slice(1) || 'txt';
+
+  // Apply processing
+  if (options.stripComments) {
+    content = stripComments(content, ext);
+  }
+  if (options.minify) {
+    content = minify(content);
+  }
 
   let fileOutput = '';
   let matchCount = 0;
@@ -126,7 +138,7 @@ ${formatted}</file>
 
 **Matches:** ${matchCount} | **Context windows:** ${windowCount}
 
-\`\`\`${ext}
+\`\`\`${extLabel}
 ${formatted}\`\`\`
 
 `;
@@ -143,7 +155,7 @@ ${content}
     } else {
       fileOutput = `### ${relPath}
 
-\`\`\`${ext}
+\`\`\`${extLabel}
 ${content}
 \`\`\`
 
@@ -221,7 +233,10 @@ export class StreamFormatter {
    */
   async writePrompt(promptText: string): Promise<void> {
     if (promptText) {
-      await this.write(`\n\n---\n\n${promptText}\n`);
+      const formatted = this.style === "xml"
+        ? `\n\n<instructions>\n${promptText}\n</instructions>\n`
+        : `\n\n---\n\n${promptText}\n`;
+      await this.write(formatted);
     }
   }
 
