@@ -1,3 +1,10 @@
+# [3.8.0](https://github.com/johnlindquist/pack/compare/v3.7.0...v3.8.0) (2025-12-08)
+
+
+### Features
+
+* **interactive:** prompt for .ini filename with pack-config.ini default ([2804a75](https://github.com/johnlindquist/pack/commit/2804a75adbfca3d0ef47e30e661b8f8d35106da2))
+
 # [3.7.0](https://github.com/johnlindquist/pack/compare/v3.6.0...v3.7.0) (2025-12-08)
 
 
