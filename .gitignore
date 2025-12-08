@@ -38,6 +38,9 @@ tmp/
 temp/
 *.tmp
 
+# packx cache
+.packx_cache/
+
 # Output files from pack (examples)
 *.xml
 output.*

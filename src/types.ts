@@ -47,6 +47,8 @@ export type Argv = mri.Argv & {
   interactive?: boolean;           // -I
   help?: boolean;                  // -h
   version?: boolean;               // -v
+  "no-cache"?: boolean;            // --no-cache (parsed by mri as cache: false)
+  cache?: boolean;                  // Set to false when --no-cache is used
 
   // Legacy mappings
   extensions?: string | string[];
@@ -186,4 +188,7 @@ export type PackerOptions = {
 
   // Prompt/instructions
   promptText?: string;
+
+  // Caching
+  noCache: boolean;
 };
