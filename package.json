@@ -55,7 +55,9 @@
     "js-tiktoken": "^1.0.21",
     "minimatch": "^10.1.1",
     "mri": "^1.2.0",
-    "p-limit": "^7.2.0"
+    "p-limit": "^7.2.0",
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.25.10"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
@@ -71,5 +73,9 @@
   },
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "trustedDependencies": [
+    "tree-sitter-javascript",
+    "tree-sitter-python"
+  ]
 }

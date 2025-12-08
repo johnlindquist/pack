@@ -42,60 +42,60 @@ describe("findAllMatches", () => {
 });
 
 describe("extractContextWindows - basic", () => {
-  test("extracts simple context", () => {
+  test("extracts simple context", async () => {
     const content = "line1\nline2 TODO\nline3";
-    const windows = extractContextWindows(content, /TODO/, 1, false);
+    const windows = await extractContextWindows(content, /TODO/, 1, false);
     expect(windows).toHaveLength(1);
     expect(windows[0].startLine).toBe(1);
     expect(windows[0].endLine).toBe(3);
   });
 
-  test("merges overlapping windows", () => {
+  test("merges overlapping windows", async () => {
     const content = "line1 TODO\nline2\nline3 TODO";
-    const windows = extractContextWindows(content, /TODO/, 2, false);
+    const windows = await extractContextWindows(content, /TODO/, 2, false);
     expect(windows).toHaveLength(1); // Should merge into one
     expect(windows[0].matches).toHaveLength(2);
   });
 
-  test("keeps separate non-overlapping windows", () => {
+  test("keeps separate non-overlapping windows", async () => {
     const content = Array.from({ length: 20 }, (_, i) => `line${i + 1}${i === 5 || i === 15 ? " TODO" : ""}`).join("\n");
-    const windows = extractContextWindows(content, /TODO/, 2, false);
+    const windows = await extractContextWindows(content, /TODO/, 2, false);
     expect(windows).toHaveLength(2);
   });
 });
 
 describe("extractContextWindows - smart mode", () => {
-  test("expands to include function block", () => {
+  test("expands to include function block", async () => {
     const content = `function hello() {
   console.log("start");
   // TODO: fix this
   console.log("end");
 }`;
-    const windows = extractContextWindows(content, /TODO/, 1, true);
+    const windows = await extractContextWindows(content, /TODO/, 1, true);
     expect(windows).toHaveLength(1);
     // Should include the function declaration
     expect(windows[0].lines.some(l => l.includes("function hello"))).toBe(true);
   });
 
-  test("expands to include if block", () => {
+  test("expands to include if block", async () => {
     const content = `if (condition) {
   doSomething();
   // TODO: handle error
   doSomethingElse();
 }`;
-    const windows = extractContextWindows(content, /TODO/, 1, true);
+    const windows = await extractContextWindows(content, /TODO/, 1, true);
     expect(windows).toHaveLength(1);
     expect(windows[0].lines.some(l => l.includes("if (condition)"))).toBe(true);
   });
 
-  test("respects max expansion limit", () => {
+  test("respects max expansion limit", async () => {
     // Create a very deep nested structure
     const content = Array.from({ length: 100 }, (_, i) => {
       if (i === 50) return "    // TODO: deep";
       return `${"  ".repeat(Math.min(i, 10))}line${i}`;
     }).join("\n");
 
-    const windows = extractContextWindows(content, /TODO/, 5, true);
+    const windows = await extractContextWindows(content, /TODO/, 5, true);
     expect(windows).toHaveLength(1);
     // Should not include the entire file
     expect(windows[0].lines.length).toBeLessThan(50);

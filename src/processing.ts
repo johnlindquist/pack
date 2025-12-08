@@ -2,11 +2,21 @@
  * Content processing utilities: comment stripping and minification
  */
 
+import { stripCommentsAST, isASTSupported } from "./ast.js";
+
 /**
  * Strip comments from code based on file extension
- * Uses robust regex to distinguish comments from string literals
+ * Uses AST parsing for supported languages (TS, JS, Python) for accuracy
+ * Falls back to regex-based stripping for other languages
  */
-export function stripComments(content: string, ext: string): string {
+export async function stripComments(content: string, ext: string): Promise<string> {
+  // Try AST-based stripping first for supported languages
+  if (isASTSupported(ext)) {
+    const { result, usedAST } = await stripCommentsAST(content, ext);
+    if (usedAST) return result;
+  }
+
+  // Fall back to regex-based stripping
   const cleanExt = ext.startsWith('.') ? ext.slice(1).toLowerCase() : ext.toLowerCase();
 
   // C-style comments (JS, TS, Java, C, C++, C#, Go, Rust, Swift, Kotlin, Scala, PHP, Dart)

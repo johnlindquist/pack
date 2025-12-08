@@ -148,27 +148,27 @@ line 7 TODO
 line 8
 line 9`;
 
-  test("extracts context around single match", () => {
-    const windows = extractContextWindows("hello\nworld TODO\nbye", /TODO/, 1);
+  test("extracts context around single match", async () => {
+    const windows = await extractContextWindows("hello\nworld TODO\nbye", /TODO/, 1);
     expect(windows).toHaveLength(1);
     expect(windows[0].startLine).toBe(1);
     expect(windows[0].endLine).toBe(3);
     expect(windows[0].matches).toHaveLength(1);
   });
 
-  test("extracts specified number of context lines", () => {
+  test("extracts specified number of context lines", async () => {
     // With 2 lines context around lines 3 and 7, windows overlap at line 5
     // so they get merged into a single window
-    const windows = extractContextWindows(content, /TODO/, 2);
+    const windows = await extractContextWindows(content, /TODO/, 2);
     expect(windows).toHaveLength(1);
     expect(windows[0].startLine).toBe(1);
     expect(windows[0].endLine).toBe(9);
     expect(windows[0].matches).toHaveLength(2);
   });
 
-  test("creates separate windows when not overlapping", () => {
+  test("creates separate windows when not overlapping", async () => {
     // With only 1 line context, windows won't overlap
-    const windows = extractContextWindows(content, /TODO/, 1);
+    const windows = await extractContextWindows(content, /TODO/, 1);
     expect(windows).toHaveLength(2);
 
     // First window: line 3 TODO with 1 line context (lines 2-4)
@@ -180,28 +180,28 @@ line 9`;
     expect(windows[1].endLine).toBe(8);
   });
 
-  test("merges overlapping windows", () => {
+  test("merges overlapping windows", async () => {
     const narrowContent = `line 1 TODO
 line 2
 line 3 TODO`;
-    const windows = extractContextWindows(narrowContent, /TODO/, 2);
+    const windows = await extractContextWindows(narrowContent, /TODO/, 2);
     // Should merge into single window
     expect(windows).toHaveLength(1);
     expect(windows[0].matches).toHaveLength(2);
   });
 
-  test("returns empty array for no matches", () => {
-    const windows = extractContextWindows(content, /NOTFOUND/, 2);
+  test("returns empty array for no matches", async () => {
+    const windows = await extractContextWindows(content, /NOTFOUND/, 2);
     expect(windows).toHaveLength(0);
   });
 
-  test("handles context at start of file", () => {
-    const windows = extractContextWindows("TODO line\nline 2\nline 3", /TODO/, 2);
+  test("handles context at start of file", async () => {
+    const windows = await extractContextWindows("TODO line\nline 2\nline 3", /TODO/, 2);
     expect(windows[0].startLine).toBe(1);
   });
 
-  test("handles context at end of file", () => {
-    const windows = extractContextWindows("line 1\nline 2\nTODO line", /TODO/, 2);
+  test("handles context at end of file", async () => {
+    const windows = await extractContextWindows("line 1\nline 2\nTODO line", /TODO/, 2);
     expect(windows[0].endLine).toBe(3);
   });
 });
