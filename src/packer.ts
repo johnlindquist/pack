@@ -1,0 +1,429 @@
+/**
+ * Packer - The core orchestrator for packx
+ * Encapsulates the Scan -> Filter -> Process -> Format pipeline
+ */
+
+import { promises as fs } from "node:fs";
+import * as path from "node:path";
+import { glob } from "glob";
+import { Minimatch } from "minimatch";
+import pLimit from "p-limit";
+
+import type { PackerOptions, FileStats } from "./types.js";
+import { buildPattern } from "./utils.js";
+import { isGitRepository, getGitStagedFiles, getGitDirtyFiles, getGitDiffFiles } from "./git.js";
+import { loadGitignore, DEFAULT_IGNORE_PATTERNS, expandWithRelatedFiles } from "./scanner.js";
+import { isBinaryFile, countTokens, analyzeFile } from "./analysis.js";
+import { extractContextWindows, formatContextWindows } from "./context.js";
+import { stripComments, minify } from "./processing.js";
+import { createHeader, createFooter, type OutputStyle } from "./formatter.js";
+
+const CONCURRENCY_LIMIT = 50;
+
+export type PackResult = {
+  output: string;
+  files: FileStats[];
+  totalTokens: number;
+  totalChars: number;
+  totalMatchCount: number;
+  totalWindowCount: number;
+  matchedFiles: string[];
+};
+
+/**
+ * Packer class - orchestrates the file packing pipeline
+ */
+export class Packer {
+  private options: PackerOptions;
+  private pattern: RegExp | null;
+  private excludePattern: RegExp | null;
+
+  constructor(options: PackerOptions) {
+    this.options = options;
+    this.pattern = buildPattern(options.searchStrings, options.caseSensitive, options.useRegex);
+    this.excludePattern = buildPattern(options.excludeStrings, options.caseSensitive, options.useRegex);
+  }
+
+  /**
+   * Execute the full packing pipeline
+   */
+  async pack(): Promise<PackResult> {
+    // 1. Discover files
+    const candidates = await this.discoverFiles();
+
+    if (candidates.length === 0) {
+      return this.emptyResult();
+    }
+
+    // 2. Filter by content
+    let matched = await this.filterByContent(candidates);
+
+    if (matched.length === 0) {
+      return this.emptyResult();
+    }
+
+    // 3. Expand with related files if requested
+    if (this.options.includeRelated) {
+      matched = await expandWithRelatedFiles(matched);
+    }
+
+    // 4. Process and format
+    return this.processFiles(matched);
+  }
+
+  /**
+   * Discover candidate files based on options
+   */
+  private async discoverFiles(): Promise<string[]> {
+    const candidates = new Set<string>();
+    const { options } = this;
+
+    if (options.gitMode) {
+      // Git-aware file discovery
+      const isGitRepo = await isGitRepository();
+      if (!isGitRepo) {
+        throw new Error("Git-aware options require a git repository");
+      }
+
+      let gitFiles: string[] = [];
+      if (options.gitMode === 'staged') {
+        gitFiles = await getGitStagedFiles();
+      } else if (options.gitMode === 'dirty') {
+        gitFiles = await getGitDirtyFiles();
+      } else if (options.gitMode === 'diff') {
+        gitFiles = await getGitDiffFiles();
+      }
+
+      // Filter by extension
+      for (const file of gitFiles) {
+        const ext = path.extname(file).toLowerCase();
+        if (options.extensions.size === 0 || options.extensions.has(ext)) {
+          const rel = path.relative(process.cwd(), file).replace(/\\/g, '/');
+          let excluded = false;
+          for (const ep of options.excludePatterns) {
+            if (rel.endsWith(ep) || file.endsWith(ep)) {
+              excluded = true;
+              break;
+            }
+          }
+          if (!excluded) {
+            candidates.add(file);
+          }
+        }
+      }
+    } else {
+      // Standard file discovery
+      for (const root of options.roots) {
+        const absRoot = path.resolve(root);
+        const gitignore = await loadGitignore(absRoot);
+
+        // Build glob patterns
+        const patterns: string[] = [];
+        for (const ext of options.extensions) {
+          const cleanExt = ext.startsWith('.') ? ext.slice(1) : ext;
+          patterns.push(`**/*.${cleanExt}`);
+        }
+
+        const allIgnores = [...DEFAULT_IGNORE_PATTERNS, ...options.excludePatterns];
+
+        for (const pat of patterns) {
+          const files = await glob(pat, {
+            cwd: absRoot,
+            ignore: allIgnores,
+            absolute: true,
+            dot: false,
+            nodir: true
+          });
+
+          for (const file of files) {
+            const relPath = path.relative(absRoot, file);
+            if (!gitignore.ignores(relPath)) {
+              candidates.add(file);
+            }
+          }
+        }
+
+        // Include pattern discovery
+        if (options.includePatterns.length > 0) {
+          for (const inc of options.includePatterns) {
+            try {
+              const isAbs = path.isAbsolute(inc);
+              const files = await glob(inc, {
+                cwd: isAbs ? undefined : absRoot,
+                ignore: allIgnores,
+                absolute: true,
+                dot: false,
+                nodir: true,
+              });
+              for (const f of files) candidates.add(f);
+            } catch {
+              // ignore invalid patterns
+            }
+          }
+        }
+      }
+    }
+
+    // Add explicit files
+    for (const f of options.explicitFiles) {
+      candidates.add(f);
+    }
+
+    // Apply include/ignore matchers
+    return this.applyMatchers([...candidates]);
+  }
+
+  /**
+   * Apply include/ignore matchers to filter candidates
+   */
+  private applyMatchers(candidates: string[]): string[] {
+    const { options } = this;
+    const cwd = process.cwd();
+
+    const includeExpandedAbs = options.includePatterns.filter(p => path.isAbsolute(p));
+    const includeExpandedRel = options.includePatterns.filter(p => !path.isAbsolute(p));
+
+    const includeMatchersAbs = includeExpandedAbs.map(p =>
+      new Minimatch(p, { dot: true, nocase: !options.caseSensitive, noglobstar: false })
+    );
+    const includeMatchersRel = includeExpandedRel.map(p =>
+      new Minimatch(p, { dot: true, nocase: !options.caseSensitive, noglobstar: false })
+    );
+
+    const explicitSet = new Set(options.explicitFiles);
+    const explicitOnly = options.explicitFiles.length > 0 && options.includePatterns.length === 0;
+
+    const filtered: string[] = [];
+
+    for (const p of candidates) {
+      const rel = path.relative(cwd, p).replace(/\\/g, '/');
+      const absPosix = p.replace(/\\/g, '/');
+
+      if (explicitOnly && !explicitSet.has(p)) continue;
+
+      if (!explicitOnly) {
+        const hasIncludeFilters = (includeMatchersAbs.length + includeMatchersRel.length) > 0;
+        if (hasIncludeFilters) {
+          const matchRel = includeMatchersRel.length ? includeMatchersRel.some(mm => mm.match(rel)) : false;
+          const matchAbs = includeMatchersAbs.length ? includeMatchersAbs.some(mm => mm.match(absPosix)) : false;
+          if (!(matchRel || matchAbs)) continue;
+        }
+      }
+
+      filtered.push(p);
+    }
+
+    return filtered;
+  }
+
+  /**
+   * Filter files by content pattern
+   */
+  private async filterByContent(files: string[]): Promise<string[]> {
+    const { options, pattern, excludePattern } = this;
+
+    // If explicit files from config, just verify they exist
+    if (options.explicitFiles.length > 0 && options.includePatterns.length === 0) {
+      const existing: string[] = [];
+      for (const f of options.explicitFiles) {
+        try {
+          await fs.access(f);
+          existing.push(f);
+        } catch {
+          // File not found
+        }
+      }
+      return existing;
+    }
+
+    const limit = pLimit(CONCURRENCY_LIMIT);
+
+    const results = await Promise.all(
+      files.map(p =>
+        limit(async () => {
+          try {
+            const stat = await fs.stat(p);
+            if (stat.size > 10 * 1024 * 1024) return null;
+            if (await isBinaryFile(p)) return null;
+
+            const content = await fs.readFile(p, 'utf8');
+
+            if (excludePattern && excludePattern.test(content)) {
+              return null;
+            }
+
+            if (!pattern || pattern.test(content)) {
+              return p;
+            }
+
+            return null;
+          } catch {
+            return null;
+          }
+        })
+      )
+    );
+
+    return results.filter((f): f is string => f !== null);
+  }
+
+  /**
+   * Process matched files and generate output
+   */
+  private async processFiles(files: string[]): Promise<PackResult> {
+    const { options, pattern } = this;
+    const cwd = process.cwd();
+    const relativePaths = files.map(p => path.relative(cwd, p));
+    const limit = pLimit(CONCURRENCY_LIMIT);
+
+    let totalMatchCount = 0;
+    let totalWindowCount = 0;
+
+    // Process files in parallel
+    const fileResults = await Promise.all(
+      files.map((filePath, index) =>
+        limit(async () => {
+          const relPath = relativePaths[index];
+          try {
+            let content = await fs.readFile(filePath, 'utf8');
+            const ext = path.extname(relPath);
+            const extLabel = ext.slice(1) || 'txt';
+
+            // Apply processing
+            if (options.stripComments) {
+              content = stripComments(content, ext);
+            }
+            if (options.minify) {
+              content = minify(content);
+            }
+
+            let fileOutput = '';
+            let matchCount = 0;
+            let windowCount = 0;
+
+            if (options.contextLines && pattern) {
+              const windows = extractContextWindows(content, pattern, options.contextLines, options.smartContext);
+              if (windows.length > 0) {
+                windowCount = windows.length;
+                matchCount = windows.reduce((sum, w) => sum + w.matches.length, 0);
+                const formatted = formatContextWindows(windows, relPath);
+
+                if (options.outputStyle === "xml") {
+                  fileOutput = `<file path="${relPath}" matches="${matchCount}" windows="${windowCount}">\n${formatted}</file>\n\n`;
+                } else {
+                  fileOutput = `### ${relPath}\n\n**Matches:** ${matchCount} | **Context windows:** ${windowCount}\n\n\`\`\`${extLabel}\n${formatted}\`\`\`\n\n`;
+                }
+              }
+            } else {
+              if (options.outputStyle === "xml") {
+                fileOutput = `<file path="${relPath}">\n${content}\n</file>\n\n`;
+              } else {
+                fileOutput = `### ${relPath}\n\n\`\`\`${extLabel}\n${content}\n\`\`\`\n\n`;
+              }
+            }
+
+            const tokens = countTokens(fileOutput);
+            return { relPath, fileOutput, tokens, size: fileOutput.length, matchCount, windowCount };
+          } catch (err) {
+            return { relPath, fileOutput: '', tokens: 0, size: 0, matchCount: 0, windowCount: 0, error: err };
+          }
+        })
+      )
+    );
+
+    // Assemble output
+    const header = createHeader(options.outputStyle, files.length, relativePaths, options.contextLines);
+    const footer = createFooter(options.outputStyle);
+
+    let output = header;
+    const fileSizes: FileStats[] = [];
+
+    for (const result of fileResults) {
+      if (result.fileOutput) {
+        output += result.fileOutput;
+        fileSizes.push({
+          path: result.relPath,
+          size: result.size,
+          tokens: result.tokens,
+          matchCount: result.matchCount,
+          windowCount: result.windowCount
+        });
+        totalMatchCount += result.matchCount;
+        totalWindowCount += result.windowCount;
+      }
+    }
+
+    output += footer;
+
+    // Add prompt if provided
+    if (options.promptText) {
+      const promptFormatted = options.outputStyle === "xml"
+        ? `\n\n<instructions>\n${options.promptText}\n</instructions>\n`
+        : `\n\n---\n\n${options.promptText}\n`;
+      output += promptFormatted;
+    }
+
+    const totalTokens = fileSizes.reduce((sum, f) => sum + f.tokens, 0);
+    const totalChars = fileSizes.reduce((sum, f) => sum + f.size, 0);
+
+    return {
+      output,
+      files: fileSizes,
+      totalTokens,
+      totalChars,
+      totalMatchCount,
+      totalWindowCount,
+      matchedFiles: files,
+    };
+  }
+
+  /**
+   * Create empty result
+   */
+  private emptyResult(): PackResult {
+    return {
+      output: '',
+      files: [],
+      totalTokens: 0,
+      totalChars: 0,
+      totalMatchCount: 0,
+      totalWindowCount: 0,
+      matchedFiles: [],
+    };
+  }
+
+  /**
+   * Analyze files for interactive selection (returns token counts)
+   */
+  async analyzeForInteractive(files: string[]): Promise<Array<{ path: string; relPath: string; tokens: number; ext: string }>> {
+    const cwd = process.cwd();
+    const limit = pLimit(CONCURRENCY_LIMIT);
+
+    const results = await Promise.all(
+      files.map(file =>
+        limit(async () => {
+          const analysis = await analyzeFile(file);
+          const relPath = path.relative(cwd, file);
+          const ext = path.extname(file).toLowerCase().replace('.', '');
+          return { path: file, relPath, tokens: analysis.tokens, ext };
+        })
+      )
+    );
+
+    return results;
+  }
+
+  /**
+   * Get the pattern regex (for external use)
+   */
+  getPattern(): RegExp | null {
+    return this.pattern;
+  }
+
+  /**
+   * Get the exclude pattern regex (for external use)
+   */
+  getExcludePattern(): RegExp | null {
+    return this.excludePattern;
+  }
+}

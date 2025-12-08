@@ -114,3 +114,9 @@ export {
   stripComments,
   minify
 } from "./processing.js";
+
+// Re-export from packer
+export {
+  Packer,
+  type PackResult
+} from "./packer.js";
