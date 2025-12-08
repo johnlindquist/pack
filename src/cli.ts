@@ -50,6 +50,7 @@ export function parseArgs(args: string[]): Argv {
       "dirty",
       "interactive", "I",
       "related", "r",
+      "follow-imports",
       "preview",
       "help", "h",
       "version", "v",
@@ -88,6 +89,7 @@ export function printHelp(): void {
       --minify             Remove empty lines and whitespace
   -l, --lines <num>        Extract N lines of context around matches
   -r, --related            Include related files (tests, stories)
+      --follow-imports     Include files imported by matched files
       --instruction <file> Prepend custom instructions
 
 \x1b[1mOUTPUT\x1b[0m
