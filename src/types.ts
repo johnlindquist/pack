@@ -45,6 +45,7 @@ export type Argv = mri.Argv & {
   config?: string;
   file?: string;                   // -f (legacy alias for config)
   interactive?: boolean;           // -I
+  explain?: boolean;               // --explain
   help?: boolean;                  // -h
   version?: boolean;               // -v
 
@@ -186,4 +187,7 @@ export type PackerOptions = {
 
   // Prompt/instructions
   promptText?: string;
+
+  // Explain mode (dry run with detailed logging)
+  explainMode: boolean;
 };

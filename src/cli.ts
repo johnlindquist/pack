@@ -53,7 +53,8 @@ export function parseArgs(args: string[]): Argv {
       "preview",
       "help", "h",
       "version", "v",
-      "stdout"
+      "stdout",
+      "explain"
     ]
   }) as Argv;
 }
@@ -100,6 +101,7 @@ export function printHelp(): void {
 \x1b[1mOTHER\x1b[0m
   -I, --interactive        Select files interactively
       --config <file>      Load config file
+      --explain            Dry run with detailed logging (no output generated)
   -h, --help               Show this help
   -v, --version            Show version
 `;
