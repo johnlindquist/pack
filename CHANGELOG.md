@@ -1,3 +1,10 @@
+# [4.1.0](https://github.com/johnlindquist/pack/compare/v4.0.0...v4.1.0) (2025-12-08)
+
+
+### Features
+
+* **interactive:** add search filter and sort by token count ([621e473](https://github.com/johnlindquist/pack/commit/621e473cf0e464986e821cf075f84d86ac89f510))
+
 # [4.0.0](https://github.com/johnlindquist/pack/compare/v3.8.1...v4.0.0) (2025-12-08)
 
 
