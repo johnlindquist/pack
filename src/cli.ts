@@ -28,6 +28,7 @@ export function parseArgs(args: string[]): Argv {
       r: "related",
       p: "prompt",
       M: "max-tokens",
+      w: "watch",
     },
     string: [
       "strings", "s",
@@ -58,7 +59,8 @@ export function parseArgs(args: string[]): Argv {
       "stdout",
       "rg",
       "no-rg",
-      "no-cache"
+      "no-cache",
+      "watch", "w"
     ]
   }) as Argv;
 }
@@ -113,6 +115,9 @@ export function printHelp(): void {
                            • Tab to focus/unfocus preview
                            • PgUp/PgDn to scroll preview
                            • With -l, shows context windows around matches
+
+\x1b[1mWATCH MODE\x1b[0m
+  -w, --watch              Watch for file changes and auto-update output
 
 \x1b[1mOTHER\x1b[0m
       --config <file>      Load config file
