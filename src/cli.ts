@@ -108,8 +108,13 @@ export function printHelp(): void {
       --rg                 Force ripgrep for file search (auto-detected by default)
       --no-rg              Disable ripgrep, use Node.js glob instead
 
+\x1b[1mINTERACTIVE MODE\x1b[0m
+  -I, --interactive        Select files interactively with preview pane
+                           • Tab to focus/unfocus preview
+                           • PgUp/PgDn to scroll preview
+                           • With -l, shows context windows around matches
+
 \x1b[1mOTHER\x1b[0m
-  -I, --interactive        Select files interactively
       --config <file>      Load config file
       --no-cache           Disable caching (force fresh analysis)
   -h, --help               Show this help

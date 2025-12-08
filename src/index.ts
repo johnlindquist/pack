@@ -225,10 +225,16 @@ async function main() {
         ext: r.ext,
       }));
 
+      // Get the search pattern for preview highlighting
+      const searchPattern = packer.getPattern();
+
       const selected = await treeCheckbox({
         message: "Select files to bundle:",
         files: fileChoices,
         pageSize: 20,
+        showPreview: true,
+        searchPattern,
+        contextLines: options.contextLines,
       });
 
       if (selected.length === 0) {
