@@ -38,86 +38,317 @@ import { StreamFormatter, StringBufferStream, type OutputStyle } from "./formatt
 
 const CONCURRENCY_LIMIT = 50;
 
-// Custom checkbox with running total display
-type TokenChoice = {
-  name: string;
-  value: string;
+// File tree checkbox with folder/extension toggling
+type FileChoice = {
+  path: string;      // Full path
+  relPath: string;   // Relative path for display
   tokens: number;
-  checked: boolean;
+  ext: string;       // File extension
 };
 
-type TokenCheckboxConfig = {
+type TreeNode = {
+  name: string;
+  path: string;
+  isFolder: boolean;
+  depth: number;
+  tokens: number;     // For folders: sum of children
+  ext: string;        // For files: extension
+  children: TreeNode[];
+  fileIndices: number[]; // Indices into original files array
+};
+
+type TreeCheckboxConfig = {
   message: string;
-  choices: TokenChoice[];
+  files: FileChoice[];
   pageSize?: number;
 };
 
-const tokenCheckbox = createPrompt<string[], TokenCheckboxConfig>((config, done) => {
-  const { choices, pageSize = 20 } = config;
+// Build tree structure from flat file list
+function buildFileTree(files: FileChoice[]): { tree: TreeNode[], flatNodes: TreeNode[] } {
+  const root: Map<string, TreeNode> = new Map();
+
+  // Create folder nodes and file nodes
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const parts = file.relPath.split('/');
+    let currentPath = '';
+
+    for (let j = 0; j < parts.length; j++) {
+      const part = parts[j];
+      const isFile = j === parts.length - 1;
+      const parentPath = currentPath;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+      if (!root.has(currentPath)) {
+        const node: TreeNode = {
+          name: part,
+          path: currentPath,
+          isFolder: !isFile,
+          depth: j,
+          tokens: isFile ? file.tokens : 0,
+          ext: isFile ? file.ext : '',
+          children: [],
+          fileIndices: isFile ? [i] : [],
+        };
+        root.set(currentPath, node);
+
+        // Add to parent's children
+        if (parentPath && root.has(parentPath)) {
+          root.get(parentPath)!.children.push(node);
+        }
+      } else if (isFile) {
+        // File already exists (shouldn't happen, but handle it)
+        root.get(currentPath)!.fileIndices.push(i);
+      }
+    }
+  }
+
+  // Calculate folder tokens and collect file indices
+  function calcFolderTokens(node: TreeNode): { tokens: number; indices: number[] } {
+    if (!node.isFolder) {
+      return { tokens: node.tokens, indices: node.fileIndices };
+    }
+    let totalTokens = 0;
+    const allIndices: number[] = [];
+    for (const child of node.children) {
+      const result = calcFolderTokens(child);
+      totalTokens += result.tokens;
+      allIndices.push(...result.indices);
+    }
+    node.tokens = totalTokens;
+    node.fileIndices = allIndices;
+    return { tokens: totalTokens, indices: allIndices };
+  }
+
+  // Get top-level nodes and calculate tokens
+  const topLevel: TreeNode[] = [];
+  for (const [nodePath, node] of root) {
+    if (!nodePath.includes('/')) {
+      topLevel.push(node);
+      calcFolderTokens(node);
+    }
+  }
+
+  // Flatten tree for display (respecting collapsed state)
+  function flattenTree(nodes: TreeNode[], collapsed: Set<string>): TreeNode[] {
+    const result: TreeNode[] = [];
+    // Sort: folders first, then by name
+    const sorted = [...nodes].sort((a, b) => {
+      if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const node of sorted) {
+      result.push(node);
+      if (node.isFolder && !collapsed.has(node.path)) {
+        result.push(...flattenTree(node.children, collapsed));
+      }
+    }
+    return result;
+  }
+
+  return { tree: topLevel, flatNodes: flattenTree(topLevel, new Set()) };
+}
+
+const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, done) => {
+  const { files, pageSize = 20 } = config;
+
+  // Build initial tree
+  const { tree } = buildFileTree(files);
+
+  // State
   const [cursor, setCursor] = useState<number>(0);
-  const initialSelected = new Set<number>();
-  choices.forEach((c, i) => { if (c.checked) initialSelected.add(i); });
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const initialSelected = new Set<number>(files.map((_, i) => i));
   const [selected, setSelected] = useState<Set<number>>(initialSelected);
+  const [showExtensions, setShowExtensions] = useState<boolean>(false);
+
+  // Flatten tree with current collapsed state
+  function getFlatNodes(): TreeNode[] {
+    function flatten(nodes: TreeNode[]): TreeNode[] {
+      const result: TreeNode[] = [];
+      const sorted = [...nodes].sort((a, b) => {
+        if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+      for (const node of sorted) {
+        result.push(node);
+        if (node.isFolder && !collapsed.has(node.path)) {
+          result.push(...flatten(node.children));
+        }
+      }
+      return result;
+    }
+    return flatten(tree);
+  }
+
+  // Get extension summary
+  function getExtensionSummary(): { ext: string; count: number; tokens: number; allSelected: boolean; indices: number[] }[] {
+    const extMap = new Map<string, { count: number; tokens: number; indices: number[] }>();
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const ext = file.ext || '(no ext)';
+      if (!extMap.has(ext)) {
+        extMap.set(ext, { count: 0, tokens: 0, indices: [] });
+      }
+      const entry = extMap.get(ext)!;
+      entry.count++;
+      entry.tokens += file.tokens;
+      entry.indices.push(i);
+    }
+    return Array.from(extMap.entries())
+      .map(([ext, data]) => ({
+        ext,
+        ...data,
+        allSelected: data.indices.every(i => selected.has(i)),
+      }))
+      .sort((a, b) => b.tokens - a.tokens);
+  }
+
+  const flatNodes = getFlatNodes();
+  const extSummary = getExtensionSummary();
 
   useKeypress((key) => {
     if (isEnterKey(key)) {
-      const result = choices.filter((_, i) => selected.has(i)).map(c => c.value);
+      const result = files.filter((_, i) => selected.has(i)).map(f => f.path);
       done(result);
-    } else if (isSpaceKey(key)) {
-      const next = new Set(selected);
-      if (next.has(cursor)) {
-        next.delete(cursor);
-      } else {
-        next.add(cursor);
+      return;
+    }
+
+    if (showExtensions) {
+      // Extension mode navigation
+      if (isUpKey(key)) {
+        setCursor(cursor > 0 ? cursor - 1 : extSummary.length - 1);
+      } else if (isDownKey(key)) {
+        setCursor(cursor < extSummary.length - 1 ? cursor + 1 : 0);
+      } else if (isSpaceKey(key)) {
+        // Toggle all files of this extension
+        const ext = extSummary[cursor];
+        if (ext) {
+          const next = new Set(selected);
+          if (ext.allSelected) {
+            ext.indices.forEach(i => next.delete(i));
+          } else {
+            ext.indices.forEach(i => next.add(i));
+          }
+          setSelected(next);
+        }
+      } else if (key.name === 'e' || key.name === 'escape') {
+        setShowExtensions(false);
+        setCursor(0);
       }
-      setSelected(next);
-    } else if (isUpKey(key)) {
-      setCursor(cursor > 0 ? cursor - 1 : choices.length - 1);
+      return;
+    }
+
+    // Tree mode navigation
+    if (isUpKey(key)) {
+      setCursor(cursor > 0 ? cursor - 1 : flatNodes.length - 1);
     } else if (isDownKey(key)) {
-      setCursor(cursor < choices.length - 1 ? cursor + 1 : 0);
+      setCursor(cursor < flatNodes.length - 1 ? cursor + 1 : 0);
+    } else if (isSpaceKey(key)) {
+      // Toggle current item (file or folder)
+      const node = flatNodes[cursor];
+      if (node) {
+        const next = new Set(selected);
+        const allSelected = node.fileIndices.every(i => selected.has(i));
+        if (allSelected) {
+          node.fileIndices.forEach(i => next.delete(i));
+        } else {
+          node.fileIndices.forEach(i => next.add(i));
+        }
+        setSelected(next);
+      }
+    } else if (key.name === 'left') {
+      // Collapse folder or go to parent
+      const node = flatNodes[cursor];
+      if (node?.isFolder && !collapsed.has(node.path)) {
+        const next = new Set(collapsed);
+        next.add(node.path);
+        setCollapsed(next);
+      }
+    } else if (key.name === 'right') {
+      // Expand folder
+      const node = flatNodes[cursor];
+      if (node?.isFolder && collapsed.has(node.path)) {
+        const next = new Set(collapsed);
+        next.delete(node.path);
+        setCollapsed(next);
+      }
     } else if (key.name === 'a') {
       // Toggle all
-      if (selected.size === choices.length) {
+      if (selected.size === files.length) {
         setSelected(new Set<number>());
       } else {
-        setSelected(new Set(choices.map((_, i) => i)));
+        setSelected(new Set(files.map((_, i) => i)));
       }
+    } else if (key.name === 'e') {
+      // Switch to extension mode
+      setShowExtensions(true);
+      setCursor(0);
     }
   });
 
-  // Calculate running total
-  const selectedTokens = choices
+  // Calculate totals
+  const selectedTokens = files
     .filter((_, i) => selected.has(i))
-    .reduce((sum, c) => sum + c.tokens, 0);
-  const totalTokens = choices.reduce((sum, c) => sum + c.tokens, 0);
+    .reduce((sum, f) => sum + f.tokens, 0);
+  const totalTokens = files.reduce((sum, f) => sum + f.tokens, 0);
 
-  // Render visible choices with pagination
-  const startIdx = Math.max(0, Math.min(cursor - Math.floor(pageSize / 2), choices.length - pageSize));
-  const endIdx = Math.min(startIdx + pageSize, choices.length);
-  const visibleChoices = choices.slice(startIdx, endIdx);
+  if (showExtensions) {
+    // Render extension list
+    const lines = extSummary.map((ext, i) => {
+      const isCursor = i === cursor;
+      const checkbox = ext.allSelected ? '◉' : (ext.indices.some(idx => selected.has(idx)) ? '◐' : '○');
+      const pointer = isCursor ? '❯' : ' ';
+      const style = isCursor ? '\x1b[36m' : (ext.allSelected ? '\x1b[32m' : '\x1b[90m');
+      const reset = '\x1b[0m';
+      return `${style}${pointer} ${checkbox} ${ext.ext} (${ext.count} files, ${formatTokenCount(ext.tokens)} tokens)${reset}`;
+    });
 
-  const lines = visibleChoices.map((choice, i) => {
+    const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)\x1b[0m`;
+    const helpLine = '\x1b[90m(↑↓ navigate, space toggle ext, e/esc back to tree, enter confirm)\x1b[0m';
+
+    return `📁 Filter by Extension:\n${lines.join('\n')}${totalLine}\n${helpLine}`;
+  }
+
+  // Render tree view with pagination
+  const startIdx = Math.max(0, Math.min(cursor - Math.floor(pageSize / 2), flatNodes.length - pageSize));
+  const endIdx = Math.min(startIdx + pageSize, flatNodes.length);
+  const visibleNodes = flatNodes.slice(startIdx, endIdx);
+
+  const lines = visibleNodes.map((node, i) => {
     const actualIdx = startIdx + i;
-    const isSelected = selected.has(actualIdx);
     const isCursor = actualIdx === cursor;
-    const checkbox = isSelected ? '◉' : '○';
+    const allSelected = node.fileIndices.every(idx => selected.has(idx));
+    const someSelected = node.fileIndices.some(idx => selected.has(idx));
+    const checkbox = allSelected ? '◉' : (someSelected ? '◐' : '○');
     const pointer = isCursor ? '❯' : ' ';
-    const style = isCursor ? '\x1b[36m' : (isSelected ? '\x1b[32m' : '\x1b[90m');
+    const indent = '  '.repeat(node.depth);
+
+    let icon = '';
+    if (node.isFolder) {
+      icon = collapsed.has(node.path) ? '▸ ' : '▾ ';
+    } else {
+      icon = '  ';
+    }
+
+    const tokenStr = ` (${formatTokenCount(node.tokens)})`;
+    const style = isCursor ? '\x1b[36m' : (allSelected ? '\x1b[32m' : (someSelected ? '\x1b[33m' : '\x1b[90m'));
     const reset = '\x1b[0m';
-    return `${style}${pointer} ${checkbox} ${choice.name}${reset}`;
+    const folderStyle = node.isFolder ? '\x1b[1m' : '';
+
+    return `${style}${pointer} ${checkbox} ${indent}${icon}${folderStyle}${node.name}${reset}${style}${tokenStr}${reset}`;
   });
 
   // Add scroll indicators
   if (startIdx > 0) {
     lines.unshift('\x1b[90m  ↑ more above\x1b[0m');
   }
-  if (endIdx < choices.length) {
+  if (endIdx < flatNodes.length) {
     lines.push('\x1b[90m  ↓ more below\x1b[0m');
   }
 
-  // Running total pinned at the bottom
-  const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${choices.length} files)\x1b[0m`;
-  const helpLine = '\x1b[90m(↑↓ navigate, space toggle, a toggle all, enter confirm)\x1b[0m';
+  const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)\x1b[0m`;
+  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, a all, e extensions, enter confirm)\x1b[0m';
 
   return `${config.message}\n${lines.join('\n')}${totalLine}\n${helpLine}`;
 });
@@ -618,23 +849,19 @@ async function main() {
         }))
       );
 
-      // Sort by token count descending (highest first)
-      analysisResults.sort((a, b) => b.tokens - a.tokens);
-
       // Build a map for quick token lookup
       const tokenMap = new Map(analysisResults.map(r => [r.file, r.tokens]));
-      const totalTokens = analysisResults.reduce((sum, r) => sum + r.tokens, 0);
 
-      // Build choices with token counts for custom checkbox
-      const choices: TokenChoice[] = analysisResults.map(({ file, tokens }) => {
+      // Build file choices for tree checkbox
+      const fileChoices: FileChoice[] = analysisResults.map(({ file, tokens }) => {
         const rel = path.relative(process.cwd(), file);
-        const tokenStr = ` (${formatTokenCount(tokens)} tokens)`;
-        return { name: `${rel}${tokenStr}`, value: file, tokens, checked: true };
+        const ext = path.extname(file).toLowerCase().replace('.', '');
+        return { path: file, relPath: rel, tokens, ext };
       });
 
-      const selected = await tokenCheckbox({
+      const selected = await treeCheckbox({
         message: "Select files to bundle:",
-        choices,
+        files: fileChoices,
         pageSize: 20,
       });
 
