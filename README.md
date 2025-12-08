@@ -23,9 +23,16 @@ packx -s "useState" -e "tsx" -o react-hooks.md
 - 🎨 **Flexible extensions** - Optionally filter by specific file types
 - 🔧 **Config files** - Save and reuse search patterns
 - ✂️ **Context lines** - Limit output to N lines around each match for focused results
-- ⚡ **Fast** - Direct file processing without external dependencies
+- ⚡ **High-performance** - Optional ripgrep integration for blazing fast searches
 - 🎯 **Precise** - Search for multiple strings with special character support
 - 📊 **Smart merging** - Overlapping context windows are automatically merged
+- 🧠 **AST-aware** - Accurate comment stripping using tree-sitter parsing
+- 💾 **Caching** - SHA-256 based file caching for faster iterative runs
+- 📦 **Token splitting** - Automatically split large outputs into chunks
+- 👁️ **Interactive mode** - File selection with live preview pane
+- 👀 **Watch mode** - Auto-update output when files change
+- 🔗 **Import following** - Automatically include imported dependencies
+- 🔒 **Content transforms** - Redact sensitive data before output
 
 ## Installation
 
@@ -255,6 +262,16 @@ jsx
 d.ts
 test.ts
 spec.ts
+
+[files]
+# Explicit file paths (optional)
+src/main.ts
+src/utils/helpers.ts
+
+[transforms]
+# Redaction rules: pattern = replacement
+sk-[a-zA-Z0-9]{48} = [REDACTED_API_KEY]
+/password/i = [REDACTED]
 ```
 
 ### Using Config Files
@@ -363,21 +380,64 @@ __tests__
 
 ## CLI Options
 
-### Pack Options
+### Search & Filter
 
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--strings` | `-s` | Search string (use multiple times) |
 | `--exclude-strings` | `-S` | Exclude files containing these strings |
-| `--extensions` | `-e` | Extensions to include (optional, defaults to common code files) |
-| `--exclude-extensions` | `-x` | Extensions to exclude (multiple or comma-separated) |
-| `--file` | `-f` | Read configuration from file |
-| `--lines` | `-l` | Number of lines around each match (default: entire file) |
-| `--prompt` | `-p` | Append a Markdown prompt at the end of the packed output |
-| `--prompt-path` |  | Append the contents of a file as the prompt |
-| `--case-sensitive` | `-C` | Make search case-sensitive (default: off) |
-| `--preview` | | Preview matched files without packing |
+| `--include` | `-i` | Include filenames/extensions (e.g. `*.ts`, `src/`) |
+| `--exclude` | `-x` | Exclude filenames/extensions |
+| `--regex` | `-R` | Treat search strings as regex patterns |
+| `--case-sensitive` | `-C` | Enable case-sensitive search |
+| `--staged` | | Include only git staged files |
+| `--diff` | | Include only files changed from main branch |
+| `--dirty` | | Include only modified/untracked files |
+
+### Processing
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--strip-comments` | | Strip comments from code (AST-aware) |
+| `--no-comments` | | Alias for `--strip-comments` |
+| `--minify` | | Remove empty lines and whitespace |
+| `--lines` | `-l` | Extract N lines of context around matches |
+| `--related` | `-r` | Include related files (tests, stories) |
+| `--follow-imports` | | Include files imported by matched files |
+
+### Output
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--output` | `-o` | Write output to file |
+| `--format` | `-f` | Output format: `xml`, `markdown`, `plain`, `jsonl` |
 | `--copy` | `-c` | Copy output to clipboard |
+| `--stdout` | | Write to stdout |
+| `--preview` | | Show matching files without packing |
+| `--max-tokens` | `-M` | Split output into chunks of max N tokens each |
+
+### Performance
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--rg` | | Force ripgrep for file search (auto-detected by default) |
+| `--no-rg` | | Disable ripgrep, use Node.js glob instead |
+| `--no-cache` | | Disable caching (force fresh analysis) |
+
+### Interactive & Watch Mode
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--interactive` | `-I` | Select files interactively with preview pane |
+| `--watch` | `-w` | Watch for file changes and auto-update output |
+
+### Other
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--config` | | Load config file |
+| `--explain` | | Dry run with detailed logging (no output generated) |
+| `--prompt` | `-p` | Append text to the end of output |
 | `--help` | `-h` | Show help |
 | `--version` | `-v` | Show version |
 
@@ -428,6 +488,150 @@ bun run compile:windows    # Windows x64
 # Build for all platforms
 bun run compile:all
 ```
+
+## Advanced Features
+
+### Interactive Mode
+
+Select files interactively with a live preview pane:
+
+```bash
+# Launch interactive file selector
+packx -s "useState" -I
+
+# With context lines shown in preview
+packx -s "TODO" -l 5 -I
+```
+
+Interactive mode features:
+- Tree-based file browser with token counts
+- Live preview pane showing file contents
+- Context window highlighting when using `-l`
+- Tab to toggle focus between file list and preview
+- PgUp/PgDn to scroll preview content
+
+### Watch Mode
+
+Automatically regenerate output when source files change:
+
+```bash
+# Watch and update output file
+packx -s "error" -o errors.xml --watch
+
+# Watch and copy to clipboard
+packx -s "TODO" --copy --watch
+```
+
+Press Ctrl+C to stop watching.
+
+### Token-Based Output Splitting
+
+Split large outputs into manageable chunks for LLM context windows:
+
+```bash
+# Split into 50k token chunks
+packx -s "function" --max-tokens 50000 -o output.xml
+
+# Creates: output-1.xml, output-2.xml, etc.
+```
+
+Each chunk includes:
+- Chunk info header with part number and total
+- Complete file contents (files are never split mid-file)
+- Proper XML/Markdown structure
+
+### JSONL Output Format
+
+Generate structured output for programmatic processing:
+
+```bash
+packx -s "API" -f jsonl -o api-files.jsonl
+```
+
+Each line is a JSON object with:
+```json
+{"path": "src/api.ts", "content": "...", "tokens": 150, "matches": [{"line": 10, "column": 5, "match": "API"}]}
+```
+
+### Import Following
+
+Automatically include files imported by matched files:
+
+```bash
+# Include all dependencies of matched files
+packx -s "useAuth" --follow-imports -o auth-system.xml
+```
+
+Supports:
+- ES6 imports (`import ... from`)
+- CommonJS requires (`require(...)`)
+- TypeScript path aliases
+
+### Content Transforms (Redaction)
+
+Redact sensitive information before output using config file transforms:
+
+```ini
+# pack-config.ini
+[search]
+apiKey
+
+[transforms]
+# Redact API keys
+sk-[a-zA-Z0-9]{48} = [REDACTED_OPENAI_KEY]
+ghp_[a-zA-Z0-9]{36} = [REDACTED_GITHUB_TOKEN]
+password\s*=\s*"[^"]+" = password="[REDACTED]"
+
+# Case-insensitive matching
+/secret/i = [SECRET]
+```
+
+Transforms are applied before any other processing.
+
+### Explain Mode
+
+Debug your configuration with a detailed dry run:
+
+```bash
+packx -s "error" -e ts --explain
+```
+
+Shows:
+- Resolved configuration options
+- File discovery process
+- Pattern matching details
+- What would be included (without generating output)
+
+### High-Performance Search with Ripgrep
+
+Packx automatically uses ripgrep when available for faster searches:
+
+```bash
+# Force ripgrep (error if not installed)
+packx -s "TODO" --rg
+
+# Disable ripgrep (use Node.js glob)
+packx -s "TODO" --no-rg
+```
+
+Install ripgrep: `brew install ripgrep` or `apt install ripgrep`
+
+### Caching
+
+File analysis results are cached for faster subsequent runs:
+
+```bash
+# First run: analyzes all files
+packx -s "useState" -o hooks.xml
+
+# Second run: uses cache (much faster)
+packx -s "useState" -o hooks.xml
+
+# Force fresh analysis
+packx -s "useState" --no-cache -o hooks.xml
+```
+
+Cache is stored in `.packx-cache/` and uses SHA-256 content hashing.
 
 ## Use Cases
 
