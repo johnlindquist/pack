@@ -249,7 +249,18 @@ export async function resolveConfig(argv: string[]): Promise<{
   const ignoreExpanded = ignoreList.flatMap(p => expandPattern(p));
 
   // Parse config file or CLI args
-  const configFile = parsed.config || parsed.file || (parsed as any).f;
+  // Auto-detect pack-config.ini if no explicit config specified
+  let configFile = parsed.config || parsed.file || (parsed as any).f;
+
+  if (!configFile) {
+    const defaultConfig = path.join(process.cwd(), 'pack-config.ini');
+    try {
+      await fs.access(defaultConfig);
+      configFile = defaultConfig;
+    } catch {
+      // No default config file found
+    }
+  }
 
   if (configFile && typeof configFile === 'string') {
     const config = await parseConfigFile(configFile);
