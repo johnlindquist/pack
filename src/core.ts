@@ -57,7 +57,9 @@ export {
   parseConfigFile,
   parseConfigContent,
   generateIniConfig,
-  createConfigTemplate
+  createConfigTemplate,
+  classifyPositionalArgs,
+  resolveConfig
 } from "./config.js";
 
 // Re-export from scanner

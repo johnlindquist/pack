@@ -5,7 +5,10 @@
 
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import type { ParsedConfig } from "./types.js";
+import type { ParsedConfig, PackerOptions, Argv, OutputStyle } from "./types.js";
+import { parseArgs } from "./cli.js";
+import { parseCSV, normalizeStrings, toExtSet, getDefaultExtensions } from "./utils.js";
+import { hasGlobChars, expandPattern } from "./scanner.js";
 
 /**
  * Parse config file in INI-like format
@@ -154,4 +157,255 @@ export function createConfigTemplate(): string {
 # examples/**         # Everything under examples
 # !important.test.ts  # Exception: include this test file
 `;
+}
+
+// ============================================================================
+// Configuration Resolution
+// ============================================================================
+
+/**
+ * Helper to convert any value to string array
+ */
+function toArray(val: any): string[] {
+  if (!val) return [];
+  return Array.isArray(val) ? val.map(String) : [String(val)];
+}
+
+/**
+ * Classify positional arguments into roots, files, and glob patterns
+ */
+export async function classifyPositionalArgs(
+  args: string[]
+): Promise<{ roots: string[]; files: string[]; globs: string[] }> {
+  const roots: string[] = [];
+  const files: string[] = [];
+  const globs: string[] = [];
+
+  for (const arg of args) {
+    if (!arg) continue;
+    if (hasGlobChars(arg)) {
+      globs.push(arg);
+      continue;
+    }
+    try {
+      const st = await fs.stat(arg);
+      if (st.isDirectory()) roots.push(arg);
+      else if (st.isFile()) files.push(path.resolve(arg));
+      else globs.push(arg);
+    } catch {
+      globs.push(arg);
+    }
+  }
+
+  return { roots, files, globs };
+}
+
+/**
+ * Resolve full configuration from CLI arguments
+ * Merges CLI args, config file, and defaults into PackerOptions
+ */
+export async function resolveConfig(argv: string[]): Promise<{
+  options: PackerOptions;
+  parsed: Argv;
+  shouldExit: 'help' | 'version' | null;
+}> {
+  const parsed = parseArgs(argv);
+
+  // Check for early exit conditions
+  if (parsed.help || parsed.h) {
+    return { options: createDefaultOptions(), parsed, shouldExit: 'help' };
+  }
+  if (parsed.version || parsed.v) {
+    return { options: createDefaultOptions(), parsed, shouldExit: 'version' };
+  }
+
+  // Initialize config values
+  let searchStrings: string[] = [];
+  let excludeStrings: string[] = [];
+  let extensions: Set<string>;
+  let excludePatterns: string[] = [];
+  let explicitFiles: string[] = [];
+
+  const caseSensitive = Boolean(parsed["case-sensitive"] || parsed.C);
+  const useRegex = Boolean(parsed.regex || parsed.R);
+  const smartContext = Boolean((parsed as any)["smart-context"]);
+
+  // Parse include/ignore patterns from CLI
+  const includeRaw = toArray((parsed as any).include);
+  const includeList = includeRaw.flatMap(v => parseCSV(v));
+  const ignoreRaw = toArray((parsed as any).ignore || (parsed as any).i);
+  const ignoreList = ignoreRaw.flatMap(v => parseCSV(v));
+
+  // Classify positional arguments
+  const positionalArgs = (parsed._ as any[] || []).map(String);
+  const { roots: positionalRoots, files: positionalFiles, globs: positionalGlobs } =
+    await classifyPositionalArgs(positionalArgs);
+
+  // Combine include patterns
+  const positionalFilePatterns = positionalFiles
+    .map(abs => path.relative(process.cwd(), abs).replace(/\\/g, '/'));
+  const combinedIncludeList = [...includeList, ...positionalGlobs, ...positionalFilePatterns];
+  const includePatterns = combinedIncludeList.flatMap(p => expandPattern(p));
+  const ignoreExpanded = ignoreList.flatMap(p => expandPattern(p));
+
+  // Parse config file or CLI args
+  const configFile = parsed.config || parsed.file || (parsed as any).f;
+
+  if (configFile && typeof configFile === 'string') {
+    const config = await parseConfigFile(configFile);
+    searchStrings = [...config.search];
+    extensions = toExtSet(config.extensions);
+    excludePatterns = [...config.exclude];
+
+    if (config.files.length > 0) {
+      explicitFiles = config.files.map(f => path.resolve(process.cwd(), f));
+    }
+
+    // Merge CLI args (CLI overrides config)
+    searchStrings.push(...normalizeStrings(parsed.strings));
+    searchStrings.push(...normalizeStrings(parsed.s));
+
+    excludeStrings = [
+      ...normalizeStrings(parsed["exclude-strings"]),
+      ...normalizeStrings(parsed.S)
+    ].filter(Boolean);
+
+    // Add CLI extensions
+    const cliExtensions = parsed.extensions || parsed.e;
+    const cliExtList = Array.isArray(cliExtensions)
+      ? cliExtensions.flatMap(v => parseCSV(String(v)))
+      : parseCSV(cliExtensions);
+    for (const ext of toExtSet(cliExtList)) {
+      extensions.add(ext);
+    }
+
+    // Add CLI exclude patterns
+    const cliExclude = parsed["exclude-extensions"] || parsed.x;
+    const cliExcludeList = Array.isArray(cliExclude)
+      ? cliExclude.flatMap(v => parseCSV(String(v)))
+      : parseCSV(cliExclude);
+
+    for (const excl of cliExcludeList) {
+      if (excl) {
+        if (!excl.includes('/') && !excl.includes('*')) {
+          excludePatterns.push(`**/*.${excl.replace(/^\./, '')}`);
+        } else {
+          excludePatterns.push(excl);
+        }
+      }
+    }
+  } else {
+    // No config file - use CLI args only
+    searchStrings = [
+      ...normalizeStrings(parsed.strings),
+      ...normalizeStrings(parsed.s)
+    ].filter(Boolean);
+
+    excludeStrings = [
+      ...normalizeStrings(parsed["exclude-strings"]),
+      ...normalizeStrings(parsed.S)
+    ].filter(Boolean);
+
+    const extensionValues = parsed.extensions || parsed.e;
+    const extensionsList = Array.isArray(extensionValues)
+      ? extensionValues.flatMap(v => parseCSV(String(v)))
+      : parseCSV(extensionValues);
+    extensions = toExtSet(extensionsList);
+
+    const excludeValues = parsed["exclude-extensions"] || parsed.x;
+    const excludeList = Array.isArray(excludeValues)
+      ? excludeValues.flatMap(v => parseCSV(String(v)))
+      : parseCSV(excludeValues);
+
+    for (const excl of excludeList) {
+      if (excl) {
+        if (!excl.includes('/') && !excl.includes('*')) {
+          excludePatterns.push(`**/*.${excl.replace(/^\./, '')}`);
+        } else {
+          excludePatterns.push(excl);
+        }
+      }
+    }
+  }
+
+  // Apply defaults
+  searchStrings = searchStrings.filter(Boolean);
+  if (!extensions.size) {
+    extensions = getDefaultExtensions();
+  }
+
+  // Determine git mode
+  let gitMode: PackerOptions['gitMode'] = null;
+  if (parsed.staged) gitMode = 'staged';
+  else if (parsed.diff) gitMode = 'diff';
+  else if (parsed.dirty) gitMode = 'dirty';
+
+  // Determine output settings
+  const rawOutputArg = (parsed.output ?? parsed.o) as any;
+  let toStdout = Boolean((parsed as any).stdout);
+  if (rawOutputArg === '-' || (parsed.o === true && (parsed._ || []).includes('-'))) {
+    toStdout = true;
+  }
+  const outputFile = typeof rawOutputArg === 'string' ? rawOutputArg : undefined;
+  const copyToClipboard = Boolean((parsed as any).copy || (parsed as any).c);
+
+  // Parse prompt text
+  const promptParts = normalizeStrings((parsed as any).prompt ?? (parsed as any).p).filter(Boolean);
+
+  const options: PackerOptions = {
+    roots: positionalRoots.length ? positionalRoots : ['.'],
+    searchStrings,
+    excludeStrings,
+    caseSensitive,
+    useRegex,
+    extensions,
+    excludePatterns,
+    includePatterns,
+    explicitFiles: [...explicitFiles, ...positionalFiles],
+    gitMode,
+    stripComments: Boolean(parsed["strip-comments"] || parsed["no-comments"]),
+    minify: Boolean(parsed.minify),
+    contextLines: parsed.lines || parsed.l,
+    smartContext,
+    includeRelated: Boolean(parsed.related || parsed.r),
+    outputStyle: ((parsed as any).format || (parsed as any).style || 'xml') as OutputStyle,
+    outputFile,
+    copyToClipboard,
+    toStdout,
+    previewOnly: Boolean(parsed.preview),
+    interactive: Boolean(parsed.interactive || parsed.I),
+    promptText: promptParts.length > 0 ? promptParts.join('\n\n') : undefined,
+  };
+
+  return { options, parsed, shouldExit: null };
+}
+
+/**
+ * Create default PackerOptions
+ */
+function createDefaultOptions(): PackerOptions {
+  return {
+    roots: ['.'],
+    searchStrings: [],
+    excludeStrings: [],
+    caseSensitive: false,
+    useRegex: false,
+    extensions: getDefaultExtensions(),
+    excludePatterns: [],
+    includePatterns: [],
+    explicitFiles: [],
+    gitMode: null,
+    stripComments: false,
+    minify: false,
+    contextLines: undefined,
+    smartContext: false,
+    includeRelated: false,
+    outputStyle: 'xml',
+    outputFile: undefined,
+    copyToClipboard: false,
+    toStdout: false,
+    previewOnly: false,
+    interactive: false,
+    promptText: undefined,
+  };
 }
