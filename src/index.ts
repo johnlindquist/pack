@@ -22,6 +22,7 @@ import { normalizeStrings } from "./utils.js";
 import { treeCheckbox, type FileChoice } from "./ui/interactive.js";
 import { Packer } from "./packer.js";
 import { startWatcher } from "./watcher.js";
+import { runExplainMode } from "./explainer.js";
 
 const VERSION = "4.0.0";
 
@@ -186,6 +187,12 @@ async function main() {
   }
   if (shouldExit === 'version') {
     console.log(`packx v${VERSION}`);
+    process.exit(0);
+  }
+
+  // Handle explain mode (dry run with detailed logging)
+  if (options.explainMode) {
+    await runExplainMode(options);
     process.exit(0);
   }
 

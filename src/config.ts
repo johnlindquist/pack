@@ -405,6 +405,7 @@ export async function resolveConfig(argv: string[]): Promise<{
     useRipgrep,
     maxTokens: maxTokens && !isNaN(maxTokens) ? maxTokens : undefined,
     noCache: parsed.cache === false,  // mri parses --no-cache as cache: false
+    explainMode: Boolean(parsed.explain),
   };
 
   return { options, parsed, shouldExit: null };
@@ -440,5 +441,6 @@ function createDefaultOptions(): PackerOptions {
     promptText: undefined,
     useRipgrep: 'auto',
     noCache: false,
+    explainMode: false,
   };
 }

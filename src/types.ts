@@ -47,6 +47,7 @@ export type Argv = mri.Argv & {
   file?: string;                   // -f (legacy alias for config)
   interactive?: boolean;           // -I
   watch?: boolean;                 // -w (watch mode)
+  explain?: boolean;               // --explain
   help?: boolean;                  // -h
   version?: boolean;               // -v
   "no-cache"?: boolean;            // --no-cache (parsed by mri as cache: false)
@@ -209,6 +210,9 @@ export type PackerOptions = {
 
   // Caching
   noCache: boolean;
+
+  // Explain mode (dry run with detailed logging)
+  explainMode: boolean;
 };
 
 // ============================================================================
