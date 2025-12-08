@@ -1,3 +1,10 @@
+# [3.7.0](https://github.com/johnlindquist/pack/compare/v3.6.0...v3.7.0) (2025-12-08)
+
+
+### Features
+
+* **interactive:** add file tree view with folder/extension toggling ([df399f2](https://github.com/johnlindquist/pack/commit/df399f2122f0adafec923990ec7d9b810f6963ee))
+
 # [3.6.0](https://github.com/johnlindquist/pack/compare/v3.5.0...v3.6.0) (2025-12-08)
 
 
