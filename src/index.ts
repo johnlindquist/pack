@@ -14,7 +14,8 @@ import * as path from "node:path";
 import { createWriteStream } from "node:fs";
 import { glob } from "glob";
 import { Minimatch } from "minimatch";
-import { checkbox } from "@inquirer/prompts";
+import { checkbox, confirm } from "@inquirer/prompts";
+import { createPrompt, useState, useKeypress, isEnterKey, isSpaceKey, isUpKey, isDownKey } from "@inquirer/core";
 import pLimit from "p-limit";
 
 import { parseArgs, printHelp, type Argv } from "./cli.js";
@@ -32,10 +33,94 @@ import {
 } from "./core.js";
 import { buildPattern, extractContextWindows, formatContextWindows } from "./context.js";
 import { scanDirectory, filterByContent, loadGitignore, hasGlobChars, expandPattern, DEFAULT_IGNORE_PATTERNS } from "./scanner.js";
-import { countTokens, isBinaryFile, formatTokenCount, getTokenWarning } from "./analysis.js";
+import { countTokens, isBinaryFile, formatTokenCount, getTokenWarning, analyzeFile } from "./analysis.js";
 import { StreamFormatter, StringBufferStream, type OutputStyle } from "./formatter.js";
 
 const CONCURRENCY_LIMIT = 50;
+
+// Custom checkbox with running total display
+type TokenChoice = {
+  name: string;
+  value: string;
+  tokens: number;
+  checked: boolean;
+};
+
+type TokenCheckboxConfig = {
+  message: string;
+  choices: TokenChoice[];
+  pageSize?: number;
+};
+
+const tokenCheckbox = createPrompt<string[], TokenCheckboxConfig>((config, done) => {
+  const { choices, pageSize = 20 } = config;
+  const [cursor, setCursor] = useState<number>(0);
+  const initialSelected = new Set<number>();
+  choices.forEach((c, i) => { if (c.checked) initialSelected.add(i); });
+  const [selected, setSelected] = useState<Set<number>>(initialSelected);
+
+  useKeypress((key) => {
+    if (isEnterKey(key)) {
+      const result = choices.filter((_, i) => selected.has(i)).map(c => c.value);
+      done(result);
+    } else if (isSpaceKey(key)) {
+      const next = new Set(selected);
+      if (next.has(cursor)) {
+        next.delete(cursor);
+      } else {
+        next.add(cursor);
+      }
+      setSelected(next);
+    } else if (isUpKey(key)) {
+      setCursor(cursor > 0 ? cursor - 1 : choices.length - 1);
+    } else if (isDownKey(key)) {
+      setCursor(cursor < choices.length - 1 ? cursor + 1 : 0);
+    } else if (key.name === 'a') {
+      // Toggle all
+      if (selected.size === choices.length) {
+        setSelected(new Set<number>());
+      } else {
+        setSelected(new Set(choices.map((_, i) => i)));
+      }
+    }
+  });
+
+  // Calculate running total
+  const selectedTokens = choices
+    .filter((_, i) => selected.has(i))
+    .reduce((sum, c) => sum + c.tokens, 0);
+  const totalTokens = choices.reduce((sum, c) => sum + c.tokens, 0);
+
+  // Render visible choices with pagination
+  const startIdx = Math.max(0, Math.min(cursor - Math.floor(pageSize / 2), choices.length - pageSize));
+  const endIdx = Math.min(startIdx + pageSize, choices.length);
+  const visibleChoices = choices.slice(startIdx, endIdx);
+
+  const lines = visibleChoices.map((choice, i) => {
+    const actualIdx = startIdx + i;
+    const isSelected = selected.has(actualIdx);
+    const isCursor = actualIdx === cursor;
+    const checkbox = isSelected ? '◉' : '○';
+    const pointer = isCursor ? '❯' : ' ';
+    const style = isCursor ? '\x1b[36m' : (isSelected ? '\x1b[32m' : '\x1b[90m');
+    const reset = '\x1b[0m';
+    return `${style}${pointer} ${checkbox} ${choice.name}${reset}`;
+  });
+
+  // Add scroll indicators
+  if (startIdx > 0) {
+    lines.unshift('\x1b[90m  ↑ more above\x1b[0m');
+  }
+  if (endIdx < choices.length) {
+    lines.push('\x1b[90m  ↓ more below\x1b[0m');
+  }
+
+  // Running total pinned at the bottom
+  const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${choices.length} files)\x1b[0m`;
+  const helpLine = '\x1b[90m(↑↓ navigate, space toggle, a toggle all, enter confirm)\x1b[0m';
+
+  return `${config.message}\n${lines.join('\n')}${totalLine}\n${helpLine}`;
+});
 
 async function createConfigTemplate(filename: string = 'pack-config.ini') {
   const template = `# Pack configuration file
@@ -119,6 +204,55 @@ async function createConfigTemplate(filename: string = 'pack-config.ini') {
     console.error(`❌ Failed to create config file: ${error}`);
     process.exit(1);
   }
+}
+
+/**
+ * Generate .ini config content from selected files
+ */
+function generateIniConfig(selectedFiles: string[], parsed: Argv): string {
+  const cwd = process.cwd();
+  const relativePaths = selectedFiles.map(f => path.relative(cwd, f));
+
+  // Extract unique extensions from selected files
+  const extensions = new Set<string>();
+  for (const file of relativePaths) {
+    const ext = path.extname(file).toLowerCase().replace('.', '');
+    if (ext) extensions.add(ext);
+  }
+
+  let config = `# Pack configuration - generated from interactive selection
+# ${new Date().toISOString()}
+
+[files]
+# Selected files (${selectedFiles.length} total)
+${relativePaths.join('\n')}
+
+[extensions]
+# Extensions from selected files
+${Array.from(extensions).join('\n')}
+`;
+
+  // Include search strings if any were used
+  const searchStrings = parsed.search || parsed.s;
+  if (searchStrings && Array.isArray(searchStrings) && searchStrings.length > 0) {
+    config += `
+[search]
+# Search strings used in original query
+${searchStrings.join('\n')}
+`;
+  }
+
+  // Include exclude patterns if any were used
+  const excludePatterns = parsed.exclude || parsed.x;
+  if (excludePatterns && Array.isArray(excludePatterns) && excludePatterns.length > 0) {
+    config += `
+[exclude]
+# Exclude patterns used in original query
+${excludePatterns.join('\n')}
+`;
+  }
+
+  return config;
 }
 
 async function main() {
@@ -472,23 +606,33 @@ async function main() {
   // Interactive selection
   const wantInteractive = Boolean(parsed.interactive || parsed.I);
   if (wantInteractive && matched.length > 0 && process.stdin.isTTY) {
-    console.log(`\n🎯 Interactive mode: Select files to include (${matched.length} matched)\n`);
+    console.log(`\n🎯 Interactive mode: Analyzing ${matched.length} files for token counts...\n`);
 
     try {
-      const choices = matched.map((file) => {
+      // Analyze all files for token counts in parallel
+      const limit = pLimit(CONCURRENCY_LIMIT);
+      const analysisResults = await Promise.all(
+        matched.map((file) => limit(async () => {
+          const analysis = await analyzeFile(file);
+          return { file, tokens: analysis.tokens };
+        }))
+      );
+
+      // Sort by token count descending (highest first)
+      analysisResults.sort((a, b) => b.tokens - a.tokens);
+
+      // Build a map for quick token lookup
+      const tokenMap = new Map(analysisResults.map(r => [r.file, r.tokens]));
+      const totalTokens = analysisResults.reduce((sum, r) => sum + r.tokens, 0);
+
+      // Build choices with token counts for custom checkbox
+      const choices: TokenChoice[] = analysisResults.map(({ file, tokens }) => {
         const rel = path.relative(process.cwd(), file);
-        let sizeStr = "";
-        try {
-          const stat = require("fs").statSync(file);
-          const kb = Math.round(stat.size / 1024);
-          sizeStr = kb > 0 ? ` (${kb}KB)` : " (<1KB)";
-        } catch {
-          // ignore
-        }
-        return { name: `${rel}${sizeStr}`, value: file, checked: true };
+        const tokenStr = ` (${formatTokenCount(tokens)} tokens)`;
+        return { name: `${rel}${tokenStr}`, value: file, tokens, checked: true };
       });
 
-      const selected = await checkbox({
+      const selected = await tokenCheckbox({
         message: "Select files to bundle:",
         choices,
         pageSize: 20,
@@ -499,9 +643,26 @@ async function main() {
         process.exit(0);
       }
 
+      // Calculate selected token total
+      const selectedTokens = selected.reduce((sum, file) => sum + (tokenMap.get(file) || 0), 0);
+
       matched.length = 0;
       matched.push(...selected);
-      console.log(`\n✅ Selected ${matched.length} file(s)\n`);
+      console.log(`\n✅ Selected ${matched.length} file(s) — ${formatTokenCount(selectedTokens)} tokens\n`);
+
+      // Ask about saving .ini config
+      const saveConfig = await confirm({
+        message: "Save selection as .ini config file?",
+        default: false,
+      });
+
+      if (saveConfig) {
+        const configContent = generateIniConfig(selected, parsed);
+        const configPath = path.join(process.cwd(), "pack-selection.ini");
+        await fs.writeFile(configPath, configContent, "utf8");
+        console.log(`\n💾 Saved config to: ${configPath}`);
+        console.log(`   Run again with: packx -f ${path.basename(configPath)}\n`);
+      }
     } catch (error: any) {
       if (error.name === "ExitPromptError") {
         console.log("\n⚠️  Selection cancelled.");
