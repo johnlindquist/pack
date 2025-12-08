@@ -18,6 +18,7 @@ import { extractContextWindows, formatContextWindows } from "./context.js";
 import { stripComments, minify } from "./processing.js";
 import { createHeader, createFooter, type OutputStyle } from "./formatter.js";
 import { isRipgrepAvailable, discoverFilesWithRipgrep, ripgrepExcludeContent } from "./ripgrep.js";
+import { CacheManager, createCacheManager } from "./cache.js";
 
 const CONCURRENCY_LIMIT = 50;
 
@@ -43,11 +44,14 @@ export class Packer {
   private excludePattern: RegExp | null;
   private usedRipgrep: boolean = false;
   private ripgrepDidContentFilter: boolean = false;
+  private cache: CacheManager;
 
   constructor(options: PackerOptions) {
     this.options = options;
     this.pattern = buildPattern(options.searchStrings, options.caseSensitive, options.useRegex);
     this.excludePattern = buildPattern(options.excludeStrings, options.caseSensitive, options.useRegex);
+    // Initialize cache (disabled if --no-cache is set)
+    this.cache = createCacheManager(process.cwd(), !options.noCache);
   }
 
   /**
@@ -58,39 +62,47 @@ export class Packer {
     this.usedRipgrep = false;
     this.ripgrepDidContentFilter = false;
 
-    // 1. Discover files
-    const candidates = await this.discoverFiles();
+    // Load cache at start
+    await this.cache.load();
 
-    if (candidates.length === 0) {
-      // If ripgrep was used with a content filter, we should report as "no matches"
-      // (exit code 3) rather than "no files" (exit code 2) since files may exist
-      // but none contained the search string.
-      const candidatesFoundIndicator = this.ripgrepDidContentFilter ? 1 : 0;
-      return this.emptyResult(candidatesFoundIndicator);
+    try {
+      // 1. Discover files
+      const candidates = await this.discoverFiles();
+
+      if (candidates.length === 0) {
+        // If ripgrep was used with a content filter, we should report as "no matches"
+        // (exit code 3) rather than "no files" (exit code 2) since files may exist
+        // but none contained the search string.
+        const candidatesFoundIndicator = this.ripgrepDidContentFilter ? 1 : 0;
+        return this.emptyResult(candidatesFoundIndicator);
+      }
+
+      // 2. Filter by content (skip if ripgrep already did content filtering)
+      let matched: string[];
+      if (this.usedRipgrep && this.options.searchStrings.length > 0) {
+        // Ripgrep already filtered by content, just verify files exist
+        matched = await this.verifyFilesExist(candidates);
+      } else {
+        matched = await this.filterByContent(candidates);
+      }
+
+      if (matched.length === 0) {
+        return this.emptyResult(candidates.length);
+      }
+
+      // 3. Expand with related files if requested
+      if (this.options.includeRelated) {
+        matched = await expandWithRelatedFiles(matched);
+      }
+
+      // 4. Process and format
+      const result = await this.processFiles(matched, candidates.length);
+      result.usedRipgrep = this.usedRipgrep;
+      return result;
+    } finally {
+      // Save cache at end (even on error)
+      await this.cache.save();
     }
-
-    // 2. Filter by content (skip if ripgrep already did content filtering)
-    let matched: string[];
-    if (this.usedRipgrep && this.options.searchStrings.length > 0) {
-      // Ripgrep already filtered by content, just verify files exist
-      matched = await this.verifyFilesExist(candidates);
-    } else {
-      matched = await this.filterByContent(candidates);
-    }
-
-    if (matched.length === 0) {
-      return this.emptyResult(candidates.length);
-    }
-
-    // 3. Expand with related files if requested
-    if (this.options.includeRelated) {
-      matched = await expandWithRelatedFiles(matched);
-    }
-
-    // 4. Process and format
-    const result = await this.processFiles(matched, candidates.length);
-    result.usedRipgrep = this.usedRipgrep;
-    return result;
   }
 
   /**
@@ -354,7 +366,7 @@ export class Packer {
    * Filter files by content pattern
    */
   private async filterByContent(files: string[]): Promise<string[]> {
-    const { options, pattern, excludePattern } = this;
+    const { options, pattern, excludePattern, cache } = this;
 
     // If explicit files from config, just verify they exist
     if (options.explicitFiles.length > 0 && options.includePatterns.length === 0) {
@@ -378,9 +390,26 @@ export class Packer {
           try {
             const stat = await fs.stat(p);
             if (stat.size > 10 * 1024 * 1024) return null;
-            if (await isBinaryFile(p)) return null;
+
+            // Check cache for binary status
+            const cached = await cache.get(p);
+            let isBinary: boolean;
+
+            if (cached) {
+              isBinary = cached.isBinary;
+            } else {
+              isBinary = await isBinaryFile(p);
+            }
+
+            if (isBinary) return null;
 
             const content = await fs.readFile(p, 'utf8');
+
+            // Update cache with binary status and token count if not cached
+            if (!cached) {
+              const tokens = countTokens(content);
+              await cache.set(p, content, { isBinary: false, tokens });
+            }
 
             if (excludePattern && excludePattern.test(content)) {
               return null;
@@ -557,19 +586,46 @@ export class Packer {
   async analyzeForInteractive(files: string[]): Promise<Array<{ path: string; relPath: string; tokens: number; ext: string }>> {
     const cwd = process.cwd();
     const limit = pLimit(CONCURRENCY_LIMIT);
+    const { cache } = this;
 
-    const results = await Promise.all(
-      files.map(file =>
-        limit(async () => {
-          const analysis = await analyzeFile(file);
-          const relPath = path.relative(cwd, file);
-          const ext = path.extname(file).toLowerCase().replace('.', '');
-          return { path: file, relPath, tokens: analysis.tokens, ext };
-        })
-      )
-    );
+    // Load cache if not already loaded
+    await cache.load();
 
-    return results;
+    try {
+      const results = await Promise.all(
+        files.map(file =>
+          limit(async () => {
+            const relPath = path.relative(cwd, file);
+            const ext = path.extname(file).toLowerCase().replace('.', '');
+
+            // Try cache first
+            const cached = await cache.get(file);
+            if (cached) {
+              return { path: file, relPath, tokens: cached.tokens, ext };
+            }
+
+            // Fallback to full analysis
+            const analysis = await analyzeFile(file);
+
+            // Cache the result
+            if (!analysis.isBinary) {
+              try {
+                const content = await fs.readFile(file);
+                await cache.set(file, content, { isBinary: analysis.isBinary, tokens: analysis.tokens });
+              } catch {
+                // Ignore cache set errors
+              }
+            }
+
+            return { path: file, relPath, tokens: analysis.tokens, ext };
+          })
+        )
+      );
+
+      return results;
+    } finally {
+      await cache.save();
+    }
   }
 
   /**

@@ -57,7 +57,8 @@ export function parseArgs(args: string[]): Argv {
       "version", "v",
       "stdout",
       "rg",
-      "no-rg"
+      "no-rg",
+      "no-cache"
     ]
   }) as Argv;
 }
@@ -110,6 +111,7 @@ export function printHelp(): void {
 \x1b[1mOTHER\x1b[0m
   -I, --interactive        Select files interactively
       --config <file>      Load config file
+      --no-cache           Disable caching (force fresh analysis)
   -h, --help               Show this help
   -v, --version            Show version
 `;

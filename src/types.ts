@@ -48,6 +48,8 @@ export type Argv = mri.Argv & {
   interactive?: boolean;           // -I
   help?: boolean;                  // -h
   version?: boolean;               // -v
+  "no-cache"?: boolean;            // --no-cache (parsed by mri as cache: false)
+  cache?: boolean;                  // Set to false when --no-cache is used
 
   // Performance
   rg?: boolean;                    // --rg (use ripgrep)
@@ -195,6 +197,9 @@ export type PackerOptions = {
 
   // Performance
   useRipgrep: 'auto' | 'force' | 'disabled';
+
+  // Caching
+  noCache: boolean;
 };
 
 // ============================================================================
