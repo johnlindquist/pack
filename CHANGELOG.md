@@ -1,3 +1,10 @@
+# [3.6.0](https://github.com/johnlindquist/pack/compare/v3.5.0...v3.6.0) (2025-12-08)
+
+
+### Features
+
+* **interactive:** add token counts, sorting, running total, and .ini config save ([f93a117](https://github.com/johnlindquist/pack/commit/f93a11780eec6dabae9e83b4b5d30b2cddb94d86))
+
 # [3.5.0](https://github.com/johnlindquist/pack/compare/v3.4.0...v3.5.0) (2025-12-07)
 
 
