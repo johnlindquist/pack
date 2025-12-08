@@ -385,6 +385,7 @@ export async function resolveConfig(argv: string[]): Promise<{
     toStdout,
     previewOnly: Boolean(parsed.preview),
     interactive: Boolean(parsed.interactive || parsed.I),
+    watch: Boolean(parsed.watch || parsed.w),
     promptText: promptParts.length > 0 ? promptParts.join('\n\n') : undefined,
   };
 
@@ -417,6 +418,7 @@ function createDefaultOptions(): PackerOptions {
     toStdout: false,
     previewOnly: false,
     interactive: false,
+    watch: false,
     promptText: undefined,
   };
 }

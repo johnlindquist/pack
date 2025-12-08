@@ -45,6 +45,7 @@ export type Argv = mri.Argv & {
   config?: string;
   file?: string;                   // -f (legacy alias for config)
   interactive?: boolean;           // -I
+  watch?: boolean;                 // -w (watch mode)
   help?: boolean;                  // -h
   version?: boolean;               // -v
 
@@ -183,6 +184,9 @@ export type PackerOptions = {
 
   // Interactive
   interactive: boolean;
+
+  // Watch mode
+  watch: boolean;
 
   // Prompt/instructions
   promptText?: string;

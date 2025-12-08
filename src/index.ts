@@ -21,6 +21,7 @@ import { formatTokenCount, getTokenWarning } from "./analysis.js";
 import { normalizeStrings } from "./utils.js";
 import { treeCheckbox, type FileChoice } from "./ui/interactive.js";
 import { Packer } from "./packer.js";
+import { startWatcher } from "./watcher.js";
 
 const VERSION = "4.0.0";
 
@@ -276,6 +277,55 @@ async function main() {
       }
       throw error;
     }
+  } else if (options.watch) {
+    // Watch mode
+    if (options.interactive) {
+      console.error("Watch mode is not compatible with interactive mode.");
+      process.exit(1);
+    }
+
+    // Create output handler for watch mode
+    const watchOutputHandler = async (result: { output: string; files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[] }) => {
+      // In watch mode, always write to output file (if specified)
+      if (options.outputFile) {
+        await fs.writeFile(options.outputFile, result.output, 'utf8');
+      }
+
+      // Handle clipboard in watch mode
+      if (options.copyToClipboard) {
+        await copyToClipboard(result.output);
+      }
+    };
+
+    // Set up graceful shutdown
+    let cleanup: (() => Promise<void>) | null = null;
+
+    const shutdown = async () => {
+      if (cleanup) {
+        await cleanup();
+      }
+      process.exit(0);
+    };
+
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
+
+    // Validate that we have an output destination
+    if (!options.outputFile && !options.copyToClipboard) {
+      console.warn("Watch mode requires --output or --copy flag to be useful.");
+      console.warn("Use: packx --watch -o output.xml");
+      console.warn("  or: packx --watch --copy");
+      process.exit(1);
+    }
+
+    // Start the watcher
+    cleanup = await startWatcher(options, {
+      onPack: watchOutputHandler,
+      log: (msg: string) => console.log(msg),
+    });
+
+    // Keep the process running
+    await new Promise(() => {});
   } else {
     // Non-interactive mode
     const result = await packer.pack();
