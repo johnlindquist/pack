@@ -88,7 +88,7 @@ export async function formatFile(
 
   // Apply processing
   if (options.stripComments) {
-    content = stripComments(content, ext);
+    content = await stripComments(content, ext);
   }
   if (options.minify) {
     content = minify(content);
@@ -99,12 +99,13 @@ export async function formatFile(
   let windowCount = 0;
 
   if (options.contextLines && options.pattern) {
-    // Extract context windows
-    const windows = extractContextWindows(
+    // Extract context windows (pass ext for AST-based smart context)
+    const windows = await extractContextWindows(
       content,
       options.pattern,
       options.contextLines,
-      options.smartContext
+      options.smartContext,
+      ext
     );
 
     if (windows.length > 0) {

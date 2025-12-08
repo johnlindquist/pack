@@ -1,8 +1,11 @@
 /**
- * Smart context extraction with indentation awareness
+ * Smart context extraction with AST awareness
+ * Uses tree-sitter for accurate block boundary detection
  */
 
 import type { MatchPosition, ContextWindow } from "./types.js";
+import { isASTSupported } from "./ast.js";
+import { findContainingBlock, expandToBlockBoundaries } from "./ast-context.js";
 
 // Re-export types for convenience
 export type { MatchPosition, ContextWindow } from "./types.js";
@@ -132,43 +135,63 @@ function findBlockEnd(lines: string[], lineIndex: number): number {
 
 /**
  * Extract context windows around pattern matches with optional smart expansion
+ * Uses AST-based block detection for supported languages when smartContext is enabled
  */
-export function extractContextWindows(
+export async function extractContextWindows(
   content: string,
   pattern: RegExp,
   contextLines: number,
-  smartContext: boolean = false
-): ContextWindow[] {
+  smartContext: boolean = false,
+  fileExt: string = ""
+): Promise<ContextWindow[]> {
   const lines = content.split('\n');
   const matches = findAllMatches(content, pattern);
 
   if (matches.length === 0) return [];
 
   const windows: ContextWindow[] = [];
+  const useAST = smartContext && fileExt && isASTSupported(fileExt);
 
   for (const match of matches) {
     let startLine: number;
     let endLine: number;
 
     if (smartContext) {
-      // Smart context: expand to include containing block
       const lineIndex = match.line - 1;
 
       // Start with fixed context
       startLine = Math.max(0, lineIndex - contextLines);
       endLine = Math.min(lines.length - 1, lineIndex + contextLines);
 
-      // Try to expand to include block boundaries
-      const blockStart = findBlockStart(lines, lineIndex);
-      const blockEnd = findBlockEnd(lines, lineIndex);
-
-      // Only use block boundaries if they're reasonably close
       const maxExpansion = contextLines * 2;
-      if (blockStart >= lineIndex - maxExpansion) {
-        startLine = Math.min(startLine, blockStart);
-      }
-      if (blockEnd <= lineIndex + maxExpansion) {
-        endLine = Math.max(endLine, blockEnd);
+
+      if (useAST) {
+        // AST-based block detection for supported languages
+        const block = await findContainingBlock(content, fileExt, lineIndex);
+        if (block) {
+          if (block.startLine >= lineIndex - maxExpansion) {
+            startLine = Math.min(startLine, block.startLine);
+          }
+          if (block.endLine <= lineIndex + maxExpansion) {
+            endLine = Math.max(endLine, block.endLine);
+          }
+        } else {
+          // Try expanding to block boundaries even without a direct containing block
+          const expanded = await expandToBlockBoundaries(content, fileExt, startLine, endLine, maxExpansion);
+          startLine = expanded.startLine;
+          endLine = expanded.endLine;
+        }
+      } else {
+        // Fall back to indentation-based heuristics
+        const blockStart = findBlockStart(lines, lineIndex);
+        const blockEnd = findBlockEnd(lines, lineIndex);
+
+        if (blockStart >= lineIndex - maxExpansion) {
+          startLine = Math.min(startLine, blockStart);
+        }
+        if (blockEnd <= lineIndex + maxExpansion) {
+          endLine = Math.max(endLine, blockEnd);
+        }
       }
     } else {
       // Simple fixed context

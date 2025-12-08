@@ -424,7 +424,7 @@ export class Packer {
 
             // Apply processing
             if (options.stripComments) {
-              content = stripComments(content, ext);
+              content = await stripComments(content, ext);
             }
             if (options.minify) {
               content = minify(content);
@@ -435,7 +435,7 @@ export class Packer {
             let windowCount = 0;
 
             if (options.contextLines && pattern) {
-              const windows = extractContextWindows(content, pattern, options.contextLines, options.smartContext);
+              const windows = await extractContextWindows(content, pattern, options.contextLines, options.smartContext, ext);
               if (windows.length > 0) {
                 windowCount = windows.length;
                 matchCount = windows.reduce((sum, w) => sum + w.matches.length, 0);
