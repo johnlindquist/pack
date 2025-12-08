@@ -62,6 +62,7 @@ export type ParsedConfig = {
   search: string[];
   extensions: string[];
   exclude: string[];
+  files: string[];  // Explicit file paths from [files] section
 };
 
 /**
@@ -225,11 +226,12 @@ export function parseConfigContent(content: string): ParsedConfig {
   const config: ParsedConfig = {
     search: [],
     extensions: [],
-    exclude: []
+    exclude: [],
+    files: []
   };
 
   const lines = content.split('\n');
-  let currentSection: 'search' | 'extensions' | 'exclude' | null = null;
+  let currentSection: 'search' | 'extensions' | 'exclude' | 'files' | null = null;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -248,6 +250,10 @@ export function parseConfigContent(content: string): ParsedConfig {
     }
     if (trimmed === '[exclude]' || trimmed === '[exclude-extensions]' || trimmed === '[ignore]') {
       currentSection = 'exclude';
+      continue;
+    }
+    if (trimmed === '[files]') {
+      currentSection = 'files';
       continue;
     }
 

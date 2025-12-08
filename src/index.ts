@@ -570,11 +570,16 @@ async function main() {
 
   // Parse config file or CLI args
   const configFile = parsed.file || parsed.f;
+  let explicitFiles: string[] = [];  // Files from [files] section
   if (configFile) {
     const config = await parseConfigFile(configFile);
     strings = config.search;
     extensions = toExtSet(config.extensions);
     excludePatterns = config.exclude;
+    // Resolve explicit file paths relative to current working directory
+    if (config.files.length > 0) {
+      explicitFiles = config.files.map(f => path.resolve(process.cwd(), f));
+    }
 
     strings.push(...normalizeStrings(parsed.strings));
     strings.push(...normalizeStrings(parsed.s));
@@ -795,42 +800,56 @@ async function main() {
     filteredCandidates.push(p);
   }
 
-  // Filter by content in parallel
+  // Filter by content in parallel (or use explicit files from config)
   const matched: string[] = [];
   const foundExtensions = new Set<string>();
   const limit = pLimit(CONCURRENCY_LIMIT);
 
-  const results = await Promise.all(
-    filteredCandidates.map(p =>
-      limit(async () => {
-        try {
-          const stat = await fs.stat(p);
-          if (stat.size > 10 * 1024 * 1024) return null;
-          if (await isBinaryFile(p)) return null;
+  if (explicitFiles.length > 0) {
+    // Use explicit files from [files] section - verify they exist
+    for (const f of explicitFiles) {
+      try {
+        await fs.access(f);
+        matched.push(f);
+        const ext = path.extname(f).toLowerCase();
+        if (ext) foundExtensions.add(ext);
+      } catch {
+        console.warn(`⚠️  File not found: ${f}`);
+      }
+    }
+  } else {
+    const results = await Promise.all(
+      filteredCandidates.map(p =>
+        limit(async () => {
+          try {
+            const stat = await fs.stat(p);
+            if (stat.size > 10 * 1024 * 1024) return null;
+            if (await isBinaryFile(p)) return null;
 
-          const content = await fs.readFile(p, 'utf8');
+            const content = await fs.readFile(p, 'utf8');
 
-          if (excludePattern && excludePattern.test(content)) {
+            if (excludePattern && excludePattern.test(content)) {
+              return null;
+            }
+
+            if (!pattern || pattern.test(content)) {
+              return p;
+            }
+
+            return null;
+          } catch {
             return null;
           }
+        })
+      )
+    );
 
-          if (!pattern || pattern.test(content)) {
-            return p;
-          }
-
-          return null;
-        } catch {
-          return null;
-        }
-      })
-    )
-  );
-
-  for (const p of results) {
-    if (p) {
-      matched.push(p);
-      const ext = path.extname(p).toLowerCase();
-      if (ext) foundExtensions.add(ext);
+    for (const p of results) {
+      if (p) {
+        matched.push(p);
+        const ext = path.extname(p).toLowerCase();
+        if (ext) foundExtensions.add(ext);
+      }
     }
   }
 
