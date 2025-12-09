@@ -4,12 +4,12 @@
  * Enhanced with file content preview pane
  */
 
-import { createPrompt, useState, useKeypress, useRef, isEnterKey, isSpaceKey, isUpKey, isDownKey } from "@inquirer/core";
-import { readFileSync, existsSync } from "node:fs";
+import { createPrompt, useState, useKeypress, isEnterKey, isSpaceKey, isUpKey, isDownKey, useEffect, useMemo } from "@inquirer/core";
+import { promises as fs } from "node:fs";
 import { Minimatch } from "minimatch";
 import { formatTokenCount } from "../analysis.js";
 import { extractContextWindows, formatContextWindows } from "../context.js";
-import type { FileChoice, TreeNode, TreeCheckboxConfig, ContextWindow } from "../types.js";
+import type { FileChoice, TreeNode, TreeCheckboxConfig } from "../types.js";
 
 // Result type that includes selection and optional glob pattern
 export type InteractiveResult = {
@@ -22,30 +22,7 @@ export type { FileChoice, TreeNode, TreeCheckboxConfig } from "../types.js";
 
 // Cache for file contents to avoid repeated reads
 const fileContentCache = new Map<string, string>();
-
-/**
- * Read file content with caching (synchronous for use in render loop)
- */
-function readFileContentSync(filePath: string): string {
-  if (fileContentCache.has(filePath)) {
-    return fileContentCache.get(filePath)!;
-  }
-  try {
-    if (!existsSync(filePath)) {
-      return `[File not found: ${filePath}]`;
-    }
-    const content = readFileSync(filePath, 'utf8');
-    // Limit cache size to prevent memory issues
-    if (fileContentCache.size > 100) {
-      const firstKey = fileContentCache.keys().next().value;
-      if (firstKey) fileContentCache.delete(firstKey);
-    }
-    fileContentCache.set(filePath, content);
-    return content;
-  } catch (error) {
-    return `[Error reading file: ${error}]`;
-  }
-}
+const MAX_PREVIEW_BYTES = 20 * 1024; // OPTIMIZATION #4: Limit preview read to 20KB
 
 /**
  * Get terminal width, defaulting to 80 if unavailable
@@ -56,9 +33,16 @@ function getTerminalWidth(): number {
 
 /**
  * Truncate or pad a string to a specific width
+ * OPTIMIZATION #9: Avoid Regex creation for simple strings
  */
 function fitToWidth(str: string, width: number): string {
-  // Remove ANSI codes for length calculation
+  // Fast path: if no ANSI codes, simple length check
+  if (!str.includes('\x1b')) {
+    if (str.length <= width) return str + ' '.repeat(width - str.length);
+    return str.slice(0, width - 3) + '...';
+  }
+
+  // Slow path: Remove ANSI codes for length calculation
   const plainStr = str.replace(/\x1b\[[0-9;]*m/g, '');
   if (plainStr.length > width) {
     return str.slice(0, width - 3) + '...';
@@ -68,46 +52,26 @@ function fitToWidth(str: string, width: number): string {
 
 /**
  * Format preview content with line numbers and optional match highlighting
+ * OPTIMIZATION #5: Returns raw lines; highlighting applied only to visible lines in render
  */
 function formatPreviewContent(
   content: string,
-  previewHeight: number,
-  scrollOffset: number,
   pattern: RegExp | null,
   contextLines?: number
 ): { lines: string[]; totalLines: number; hasMatches: boolean } {
-  const allLines = content.split('\n');
-
   // If we have a pattern and context lines, show context windows instead
   if (pattern && contextLines) {
     const windows = extractContextWindows(content, pattern, contextLines, false);
     if (windows.length > 0) {
       const formatted = formatContextWindows(windows, '');
       const contextLinesArr = formatted.split('\n');
-      const visibleLines = contextLinesArr.slice(scrollOffset, scrollOffset + previewHeight);
-      return { lines: visibleLines, totalLines: contextLinesArr.length, hasMatches: true };
+      return { lines: contextLinesArr, totalLines: contextLinesArr.length, hasMatches: true };
     }
   }
 
-  // Regular file preview with optional pattern highlighting
-  const startLine = Math.min(scrollOffset, Math.max(0, allLines.length - previewHeight));
-  const visibleLines = allLines.slice(startLine, startLine + previewHeight);
-
-  const formattedLines = visibleLines.map((line, idx) => {
-    const lineNum = startLine + idx + 1;
-    const lineNumStr = String(lineNum).padStart(4, ' ');
-    let displayLine = line;
-
-    // Highlight matches if pattern provided
-    if (pattern) {
-      const regex = new RegExp(pattern.source, pattern.flags.replace('g', '') + 'g');
-      displayLine = displayLine.replace(regex, (match) => `\x1b[43m\x1b[30m${match}\x1b[0m`);
-    }
-
-    return `\x1b[90m${lineNumStr}|\x1b[0m ${displayLine}`;
-  });
-
-  return { lines: formattedLines, totalLines: allLines.length, hasMatches: false };
+  // Simply split lines here; coloring happens only for visible lines in the render loop
+  const allLines = content.split('\n');
+  return { lines: allLines, totalLines: allLines.length, hasMatches: false };
 }
 
 /**
@@ -178,18 +142,17 @@ export function buildFileTree(files: FileChoice[]): { tree: TreeNode[], flatNode
     }
   }
 
-  // Flatten tree for display (respecting collapsed state)
-  function flattenTree(nodes: TreeNode[], collapsed: Set<string>): TreeNode[] {
+  // Flatten tree for display (used for initial value and testing)
+  function flattenTree(nodes: TreeNode[], collapsedSet: Set<string>): TreeNode[] {
     const result: TreeNode[] = [];
-    // Sort: folders first, then by token count (largest first)
     const sorted = [...nodes].sort((a, b) => {
       if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
-      return b.tokens - a.tokens; // Sort by tokens descending
+      return b.tokens - a.tokens;
     });
     for (const node of sorted) {
       result.push(node);
-      if (node.isFolder && !collapsed.has(node.path)) {
-        result.push(...flattenTree(node.children, collapsed));
+      if (node.isFolder && !collapsedSet.has(node.path)) {
+        result.push(...flattenTree(node.children, collapsedSet));
       }
     }
     return result;
@@ -213,33 +176,36 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     packignoreIndices = new Set<number>()
   } = config;
 
-  // Build initial tree
-  const { tree } = buildFileTree(files);
+  // OPTIMIZATION #1: Memoize tree construction (static for the prompt lifetime)
+  const { tree } = useMemo(() => buildFileTree(files), [files]);
 
   // State
   const [cursor, setCursor] = useState<number>(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  // Files matching packignore patterns start unselected; all others start selected
-  const initialSelected = new Set<number>(
-    files.map((_, i) => i).filter(i => !packignoreIndices.has(i))
-  );
-  const [selected, setSelected] = useState<Set<number>>(initialSelected);
+
+  // Initialize selection once
+  const [selected, setSelected] = useState<Set<number>>(() => {
+    return new Set<number>(
+      files.map((_, i) => i).filter(i => !packignoreIndices.has(i))
+    );
+  });
+
   const [showExtensions, setShowExtensions] = useState<boolean>(false);
   const [filterText, setFilterText] = useState<string>('');
   const [filterCursor, setFilterCursor] = useState<number>(0);
   const [isFiltering, setIsFiltering] = useState<boolean>(false);
-  const [isGlobMode, setIsGlobMode] = useState<boolean>(false);  // Track if filter contains glob chars
 
   // Preview state
   const [previewScroll, setPreviewScroll] = useState<number>(0);
   const [previewFocused, setPreviewFocused] = useState<boolean>(false);
-  const lastPreviewPath = useRef<string>('');
+  const [previewContent, setPreviewContent] = useState<string>('');
+  const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
 
-  // Flatten tree with current collapsed state
-  function getFlatNodes(): TreeNode[] {
+  // OPTIMIZATION #6: Memoize flattened nodes
+  // Recalculates ONLY when collapse state or filter changes
+  const flatNodes = useMemo(() => {
     function flatten(nodes: TreeNode[]): TreeNode[] {
       const result: TreeNode[] = [];
-      // Sort: folders first, then by token count (largest first)
       const sorted = [...nodes].sort((a, b) => {
         if (a.isFolder !== b.isFolder) return a.isFolder ? -1 : 1;
         return b.tokens - a.tokens;
@@ -252,33 +218,31 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       }
       return result;
     }
+
     let nodes = flatten(tree);
 
     // Apply filter if active
     if (filterText) {
-      // Check if it's a glob pattern
       const hasGlobChars = /[\*\?\[\]\{\}!]/.test(filterText);
+      // OPTIMIZATION #8: Create matcher once outside loop
       if (hasGlobChars) {
-        // Use minimatch for glob matching
         try {
           const mm = new Minimatch(filterText, { nocase: true, matchBase: true });
           nodes = nodes.filter(node => mm.match(node.path) || mm.match(node.name));
         } catch {
-          // Invalid glob, fall back to substring match
           const lowerFilter = filterText.toLowerCase();
           nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
         }
       } else {
-        // Simple substring match
         const lowerFilter = filterText.toLowerCase();
         nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
       }
     }
     return nodes;
-  }
+  }, [tree, collapsed, filterText]);
 
-  // Get extension summary
-  function getExtensionSummary(): { ext: string; count: number; tokens: number; allSelected: boolean; indices: number[] }[] {
+  // OPTIMIZATION #7: Memoize extension summary
+  const extSummary = useMemo(() => {
     const extMap = new Map<string, { count: number; tokens: number; indices: number[] }>();
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -298,31 +262,65 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
         allSelected: data.indices.every(i => selected.has(i)),
       }))
       .sort((a, b) => b.tokens - a.tokens);
-  }
+  }, [files, selected]);
 
-  const flatNodes = getFlatNodes();
-  const extSummary = getExtensionSummary();
+  // OPTIMIZATION #2, #3, #4: Async, Debounced, Partial File Reading
+  useEffect(() => {
+    if (!showPreview) return;
 
-  // Get current preview content based on cursor position
-  let previewContent = '';
-  if (showPreview) {
     const node = flatNodes[cursor];
-    if (node && !node.isFolder) {
-      const fileIdx = node.fileIndices[0];
-      if (fileIdx !== undefined) {
-        const file = files[fileIdx];
-        if (file) {
-          // Reset scroll when file changes
-          if (file.path !== lastPreviewPath.current) {
-            lastPreviewPath.current = file.path;
-            // Note: We can't reset scroll here since we're in render, but the scroll
-            // will reset on next navigation keystroke
-          }
-          previewContent = readFileContentSync(file.path);
-        }
-      }
+    if (!node || node.isFolder) {
+      setPreviewContent('');
+      return;
     }
-  }
+
+    const fileIdx = node.fileIndices[0];
+    const filePath = files[fileIdx].path;
+
+    if (fileContentCache.has(filePath)) {
+      setPreviewContent(fileContentCache.get(filePath)!);
+      return;
+    }
+
+    // OPTIMIZATION #3: Debounce to prevent thrashing when scrolling quickly
+    const timer = setTimeout(async () => {
+      setIsLoadingPreview(true);
+      try {
+        const handle = await fs.open(filePath, 'r');
+        try {
+          // OPTIMIZATION #4: Only read first N bytes
+          const buffer = Buffer.alloc(MAX_PREVIEW_BYTES);
+          const { bytesRead } = await handle.read(buffer, 0, MAX_PREVIEW_BYTES, 0);
+          let content = buffer.toString('utf8', 0, bytesRead);
+          if (bytesRead === MAX_PREVIEW_BYTES) {
+            content += '\n... (preview truncated) ...';
+          }
+          fileContentCache.set(filePath, content);
+          setPreviewContent(content);
+        } finally {
+          await handle.close();
+        }
+      } catch (err) {
+        setPreviewContent(`[Error reading file: ${err}]`);
+      } finally {
+        setIsLoadingPreview(false);
+      }
+    }, 100); // 100ms debounce
+
+    return () => clearTimeout(timer);
+  }, [cursor, flatNodes, showPreview, files]);
+
+  // OPTIMIZATION #10: Memoize layout calculations (line splitting)
+  const { rawPreviewLines, previewTotalLines } = useMemo(() => {
+    if (!previewContent) return { rawPreviewLines: [] as string[], previewTotalLines: 0 };
+
+    const { lines, totalLines } = formatPreviewContent(
+      previewContent,
+      searchPattern,
+      contextLines
+    );
+    return { rawPreviewLines: lines, previewTotalLines: totalLines };
+  }, [previewContent, searchPattern, contextLines]);
 
   useKeypress((key: any) => {
     if (isEnterKey(key)) {
@@ -486,9 +484,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       // Toggle focus between tree and preview
       setPreviewFocused(!previewFocused);
     } else if (showPreview && previewFocused) {
-      // Preview scrolling when focused
       const previewHeight = Math.min(pageSize, 15);
-      const totalLines = previewContent.split('\n').length;
+      const totalLines = previewTotalLines;
 
       if (key.name === 'pageup' || (key.ctrl && key.name === 'u')) {
         setPreviewScroll(Math.max(0, previewScroll - previewHeight));
@@ -502,11 +499,12 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     }
   });
 
-  // Calculate totals
-  const selectedTokens = files
+  // Calculate totals - Memoized to avoid frequent recalculation
+  const selectedTokens = useMemo(() => files
     .filter((_, i) => selected.has(i))
-    .reduce((sum, f) => sum + f.tokens, 0);
-  const totalTokens = files.reduce((sum, f) => sum + f.tokens, 0);
+    .reduce((sum, f) => sum + f.tokens, 0), [files, selected]);
+
+  const totalTokens = useMemo(() => files.reduce((sum, f) => sum + f.tokens, 0), [files]);
 
   if (showExtensions) {
     // Render extension list
@@ -581,34 +579,37 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     filterLine = `\x1b[33m🔍 Filter${modeHint}: "${filterText}"\x1b[0m  \x1b[90m(showing ${flatNodes.length} matches, esc clear)\x1b[0m`;
   }
 
-  // Determine if we should show preview
   if (showPreview) {
-    // Calculate layout dimensions
     const termWidth = getTerminalWidth();
     const previewWidth = configPreviewWidth || Math.floor(termWidth * 0.5);
     const treeWidth = Math.floor(termWidth * 0.45);
     const previewHeight = Math.min(pageSize, 15);
 
-    // Get current node info for preview header
     const currentNode = flatNodes[cursor];
     const isFile = currentNode && !currentNode.isFolder;
 
-    // Format preview content
-    let previewLines: string[] = [];
+    let finalPreviewLines: string[] = [];
     let previewHeader = '';
     let previewFooter = '';
 
-    if (isFile && previewContent) {
-      const { lines: formattedPreview, totalLines, hasMatches } = formatPreviewContent(
-        previewContent,
-        previewHeight,
-        previewScroll,
-        searchPattern,
-        contextLines
-      );
-      previewLines = formattedPreview;
+    if (isFile) {
+      // OPTIMIZATION #5: Only format visible lines + scroll
+      const startLine = Math.min(previewScroll, Math.max(0, previewTotalLines - previewHeight));
 
-      // Preview header with file info
+      // We map over ONLY the visible lines to apply highlighting
+      finalPreviewLines = rawPreviewLines.slice(startLine, startLine + previewHeight).map((line, idx) => {
+        const lineNum = startLine + idx + 1;
+        const lineNumStr = String(lineNum).padStart(4, ' ');
+        let displayLine = line;
+
+        // Apply regex highlight only if pattern exists
+        if (searchPattern) {
+          const regex = new RegExp(searchPattern.source, searchPattern.flags.replace('g', '') + 'g');
+          displayLine = displayLine.replace(regex, (match) => `\x1b[43m\x1b[30m${match}\x1b[0m`);
+        }
+        return `\x1b[90m${lineNumStr}|\x1b[0m ${displayLine}`;
+      });
+
       const displayPath = currentNode.path.length > previewWidth - 10
         ? '...' + currentNode.path.slice(-(previewWidth - 13))
         : currentNode.path;
@@ -616,18 +617,17 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       const focusIndicator = previewFocused ? '\x1b[36m[FOCUSED]\x1b[0m ' : '';
       previewHeader = `${focusIndicator}\x1b[1m📄 ${displayPath}\x1b[0m`;
 
-      if (hasMatches && contextLines) {
+      if (contextLines) {
         previewHeader += ` \x1b[33m(${contextLines} lines context)\x1b[0m`;
       }
 
-      // Scroll indicator
-      const scrollPercent = totalLines > previewHeight
-        ? Math.round((previewScroll / (totalLines - previewHeight)) * 100)
+      const scrollPercent = previewTotalLines > previewHeight
+        ? Math.round((previewScroll / (previewTotalLines - previewHeight)) * 100)
         : 100;
-      previewFooter = `\x1b[90m─── ${scrollPercent}% (${totalLines} lines) ───\x1b[0m`;
+      previewFooter = `\x1b[90m─── ${scrollPercent}% (${previewTotalLines} lines) ───\x1b[0m`;
     } else if (currentNode?.isFolder) {
       previewHeader = '\x1b[1m📁 Folder\x1b[0m';
-      previewLines = [
+      finalPreviewLines = [
         '',
         `  \x1b[90mFolder: ${currentNode.name}\x1b[0m`,
         `  \x1b[90mFiles: ${currentNode.fileIndices.length}\x1b[0m`,
@@ -638,22 +638,21 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       previewFooter = '\x1b[90m─────────────────\x1b[0m';
     } else {
       previewHeader = '\x1b[90m📄 Preview\x1b[0m';
-      previewLines = ['', '  \x1b[90mLoading...\x1b[0m'];
+      finalPreviewLines = ['', '  \x1b[90mNo file selected\x1b[0m'];
       previewFooter = '\x1b[90m─────────────────\x1b[0m';
     }
 
-    // Pad preview lines to match tree height
-    while (previewLines.length < previewHeight) {
-      previewLines.push('');
+    if (isLoadingPreview && isFile) {
+      finalPreviewLines = ['', '  \x1b[33mLoading...\x1b[0m'];
     }
 
-    // Build split-pane layout
-    const separator = ' │ ';
-    const separatorWidth = 3;
+    while (finalPreviewLines.length < previewHeight) {
+      finalPreviewLines.push('');
+    }
 
-    // Combine tree and preview lines side by side
+    const separator = ' │ ';
     const combinedLines: string[] = [];
-    const maxLines = Math.max(treeLines.length, previewLines.length + 2); // +2 for header and footer
+    const maxLines = Math.max(treeLines.length, finalPreviewLines.length + 2);
 
     for (let i = 0; i < maxLines; i++) {
       const treeLine = treeLines[i] || '';
@@ -664,10 +663,9 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       } else if (i === maxLines - 1) {
         previewLine = previewFooter;
       } else {
-        previewLine = previewLines[i - 1] || '';
+        previewLine = finalPreviewLines[i - 1] || '';
       }
 
-      // Truncate lines to fit width
       const treeLineFit = fitToWidth(treeLine, treeWidth);
       const previewLineFit = fitToWidth(previewLine, previewWidth);
 
