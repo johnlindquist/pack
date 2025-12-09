@@ -23,6 +23,8 @@ function createTestOptions(overrides: Partial<PackerOptions> = {}): PackerOption
     contextLines: undefined,
     smartContext: false,
     includeRelated: false,
+    followImports: false,
+    transforms: [],
     outputStyle: "xml",
     outputFile: undefined,
     copyToClipboard: false,
@@ -31,6 +33,11 @@ function createTestOptions(overrides: Partial<PackerOptions> = {}): PackerOption
     interactive: false,
     watch: true,
     promptText: undefined,
+    useRipgrep: 'auto',
+    noCache: false,
+    usePackignore: true,
+    explainMode: false,
+    verbose: false,
     ...overrides,
   };
 }

@@ -35,7 +35,9 @@ function createTestOptions(overrides: Partial<PackerOptions> = {}): PackerOption
     promptText: undefined,
     useRipgrep: 'auto',
     noCache: false,
+    usePackignore: true,
     explainMode: false,
+    verbose: false,
     ...overrides,
   };
 }

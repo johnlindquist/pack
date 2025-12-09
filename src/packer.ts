@@ -8,6 +8,7 @@ import * as path from "node:path";
 import { glob } from "glob";
 import { Minimatch } from "minimatch";
 import pLimit from "p-limit";
+import ignore from "ignore";
 
 import type { PackerOptions, FileStats, OutputChunk, SkippedFile } from "./types.js";
 import { buildPattern } from "./utils.js";
@@ -192,7 +193,8 @@ export class Packer {
         options.excludeStrings,
         options.caseSensitive,
         options.useRegex,
-        true // useGitignore
+        true, // useGitignore
+        options.usePackignore // usePackignore
       );
 
       if (!result.usedRipgrep) {
@@ -271,7 +273,7 @@ export class Packer {
       for (const root of options.roots) {
         const absRoot = path.resolve(root);
         const gitignore = await loadGitignore(absRoot);
-        const packignore = await loadPackignore(absRoot);
+        const packignore = options.usePackignore ? await loadPackignore(absRoot) : ignore();
 
         // Build glob patterns
         const patterns: string[] = [];

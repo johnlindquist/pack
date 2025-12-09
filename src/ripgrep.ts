@@ -27,6 +27,8 @@ export type RipgrepSearchOptions = {
   useRegex: boolean;
   /** Respect .gitignore files (default: true) */
   useGitignore?: boolean;
+  /** Respect .packignore file (default: true) */
+  usePackignore?: boolean;
 };
 
 export type RipgrepResult = {
@@ -92,13 +94,15 @@ async function buildRipgrepArgs(options: RipgrepSearchOptions): Promise<string[]
     args.push("--no-ignore");
   }
 
-  // Check for .packignore file and add it if it exists (early in args list)
-  const packignorePath = path.join(path.resolve(options.root), '.packignore');
-  try {
-    await fs.access(packignorePath);
-    args.push("--ignore-file", packignorePath);
-  } catch {
-    // No .packignore file - continue without it
+  // Check for .packignore file and add it if it exists (when enabled)
+  if (options.usePackignore !== false) {
+    const packignorePath = path.join(path.resolve(options.root), '.packignore');
+    try {
+      await fs.access(packignorePath);
+      args.push("--ignore-file", packignorePath);
+    } catch {
+      // No .packignore file - continue without it
+    }
   }
 
   // Output mode: files only (no line content)
@@ -377,7 +381,8 @@ export async function discoverFilesWithRipgrep(
   excludeStrings: string[],
   caseSensitive: boolean,
   useRegex: boolean,
-  useGitignore: boolean = true
+  useGitignore: boolean = true,
+  usePackignore: boolean = true
 ): Promise<RipgrepResult> {
   // First pass: find files matching extensions and content pattern
   const result = await ripgrepSearchMultiple({
@@ -389,6 +394,7 @@ export async function discoverFilesWithRipgrep(
     caseSensitive,
     useRegex,
     useGitignore,
+    usePackignore,
   });
 
   if (!result.usedRipgrep || result.error || result.files.length === 0) {

@@ -80,6 +80,11 @@ export function parseArgs(args: string[]): Argv {
       description: 'Include only modified/untracked files',
       group: 'Search & Filter:',
     })
+    .option('no-packignore', {
+      type: 'boolean',
+      description: 'Ignore .packignore file',
+      group: 'Search & Filter:',
+    })
 
     // Processing options
     .option('strip-comments', {
@@ -190,17 +195,6 @@ export function parseArgs(args: string[]): Argv {
     })
 
     // Other options
-    .option('config', {
-      type: 'string',
-      description: 'Load config file',
-      group: 'Other:',
-    })
-    .option('file', {
-      alias: 'f',
-      type: 'string',
-      description: 'Legacy alias for --config (use --config instead)',
-      group: 'Other:',
-    })
     .option('prompt', {
       alias: 'p',
       type: 'string',
@@ -290,6 +284,7 @@ export function printHelp(): void {
       --staged             Include only git staged files
       --diff               Include only files changed from main
       --dirty              Include only modified/untracked files
+      --no-packignore      Ignore .packignore file
 
 \x1b[1mPROCESSING\x1b[0m
       --strip-comments     Strip comments from code
@@ -323,7 +318,6 @@ export function printHelp(): void {
   -w, --watch              Watch for file changes and auto-update output
 
 \x1b[1mOTHER\x1b[0m
-      --config <file>      Load config file
       --no-cache           Disable caching (force fresh analysis)
       --explain            Dry run with detailed logging (no output generated)
       --verbose            Enable verbose error logging for debugging

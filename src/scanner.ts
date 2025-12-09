@@ -116,7 +116,8 @@ export async function scanDirectory(
   extensions: Set<string>,
   excludePatterns: string[],
   caseSensitive: boolean = false,
-  useGitignore: boolean = true
+  useGitignore: boolean = true,
+  usePackignore: boolean = true
 ): Promise<string[]> {
   const absRoot = path.resolve(root);
   const candidates: string[] = [];
@@ -124,8 +125,8 @@ export async function scanDirectory(
   // Load .gitignore rules
   const gitignore = useGitignore ? await loadGitignore(absRoot) : ignore();
 
-  // Load .packignore rules (always loaded, applied after .gitignore)
-  const packignore = await loadPackignore(absRoot);
+  // Load .packignore rules (when enabled)
+  const packignore = usePackignore ? await loadPackignore(absRoot) : ignore();
 
   // Build glob patterns for each extension
   const patterns: string[] = [];

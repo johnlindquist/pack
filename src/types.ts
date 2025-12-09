@@ -60,8 +60,6 @@ export type Argv = {
   template?: string;
 
   // Meta
-  config?: string;
-  file?: string;                   // legacy alias for config
   interactive?: boolean;           // -I
   I?: boolean;                     // alias
   watch?: boolean;                 // -w (watch mode)
@@ -78,6 +76,9 @@ export type Argv = {
   // Performance
   rg?: boolean;                    // --rg (use ripgrep)
   "no-rg"?: boolean;               // --no-rg (disable ripgrep)
+
+  // Packignore
+  "no-packignore"?: boolean;       // --no-packignore
 
   // Legacy mappings
   extensions?: string | string[];
@@ -101,13 +102,6 @@ export type TransformRule = {
   replacement: string;
 };
 
-export type ParsedConfig = {
-  search: string[];
-  extensions: string[];
-  exclude: string[];
-  files: string[];  // Explicit file paths from [files] section
-  transforms: TransformRule[];  // Content transformation rules
-};
 
 // ============================================================================
 // Context Window Types
@@ -207,6 +201,7 @@ export type TreeCheckboxConfig = {
   previewWidth?: number;  // Width in characters for preview pane
   searchPattern?: RegExp | null;  // Pattern for context window highlighting
   contextLines?: number;  // Number of context lines around matches
+  packignoreIndices?: Set<number>;  // File indices that match .packignore (start unselected)
 };
 
 // ============================================================================
@@ -263,6 +258,9 @@ export type PackerOptions = {
 
   // Caching
   noCache: boolean;
+
+  // Packignore
+  usePackignore: boolean;
 
   // Explain mode (dry run with detailed logging)
   explainMode: boolean;

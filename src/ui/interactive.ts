@@ -201,7 +201,8 @@ export const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, 
     showPreview = false,
     previewWidth: configPreviewWidth,
     searchPattern = null,
-    contextLines
+    contextLines,
+    packignoreIndices = new Set<number>()
   } = config;
 
   // Build initial tree
@@ -210,7 +211,10 @@ export const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, 
   // State
   const [cursor, setCursor] = useState<number>(0);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const initialSelected = new Set<number>(files.map((_, i) => i));
+  // Files matching packignore patterns start unselected; all others start selected
+  const initialSelected = new Set<number>(
+    files.map((_, i) => i).filter(i => !packignoreIndices.has(i))
+  );
   const [selected, setSelected] = useState<Set<number>>(initialSelected);
   const [showExtensions, setShowExtensions] = useState<boolean>(false);
   const [filterText, setFilterText] = useState<string>('');

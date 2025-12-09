@@ -8,7 +8,6 @@ import {
   formatContextWindows,
   contentContainsStrings,
   normalizeStrings,
-  parseConfigContent,
   getDefaultExtensions,
   extensionToGlobPattern,
   hasGlobChars,
@@ -280,85 +279,6 @@ describe("normalizeStrings", () => {
   test("wraps empty string in array (falsy but valid string)", () => {
     // Empty string is falsy, so normalizeStrings returns empty array
     expect(normalizeStrings("")).toEqual([]);
-  });
-});
-
-describe("parseConfigContent", () => {
-  test("parses search section", () => {
-    const content = `[search]
-TODO
-FIXME`;
-    const config = parseConfigContent(content);
-    expect(config.search).toEqual(["TODO", "FIXME"]);
-  });
-
-  test("parses extensions section", () => {
-    const content = `[extensions]
-ts
-tsx
-js`;
-    const config = parseConfigContent(content);
-    expect(config.extensions).toEqual(["ts", "tsx", "js"]);
-  });
-
-  test("parses exclude section", () => {
-    const content = `[exclude]
-*.d.ts
-node_modules`;
-    const config = parseConfigContent(content);
-    expect(config.exclude).toEqual(["*.d.ts", "node_modules"]);
-  });
-
-  test("parses all sections together", () => {
-    const content = `[search]
-TODO
-
-[extensions]
-ts
-
-[exclude]
-dist`;
-    const config = parseConfigContent(content);
-    expect(config.search).toEqual(["TODO"]);
-    expect(config.extensions).toEqual(["ts"]);
-    expect(config.exclude).toEqual(["dist"]);
-  });
-
-  test("ignores comments", () => {
-    const content = `[search]
-# This is a comment
-TODO
-# Another comment
-FIXME`;
-    const config = parseConfigContent(content);
-    expect(config.search).toEqual(["TODO", "FIXME"]);
-  });
-
-  test("ignores empty lines", () => {
-    const content = `[search]
-
-TODO
-
-FIXME
-
-`;
-    const config = parseConfigContent(content);
-    expect(config.search).toEqual(["TODO", "FIXME"]);
-  });
-
-  test("handles alternative section names", () => {
-    const content = `[strings]
-search1
-
-[include]
-ts
-
-[ignore]
-dist`;
-    const config = parseConfigContent(content);
-    expect(config.search).toEqual(["search1"]);
-    expect(config.extensions).toEqual(["ts"]);
-    expect(config.exclude).toEqual(["dist"]);
   });
 });
 

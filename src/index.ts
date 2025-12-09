@@ -11,74 +11,20 @@
 
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { createWriteStream } from "node:fs";
 import { spawn } from "node:child_process";
-import { input } from "@inquirer/prompts";
+import { input, select, confirm } from "@inquirer/prompts";
 
 import { printHelp } from "./cli.js";
-import { resolveConfig, createConfigTemplate, generateIniConfig } from "./config.js";
+import { resolveConfig, generatePackignore } from "./config.js";
 import { formatTokenCount, getTokenWarning } from "./analysis.js";
-import { normalizeStrings } from "./utils.js";
 import { treeCheckbox, type FileChoice } from "./ui/interactive.js";
+import { loadPackignore } from "./scanner.js";
 import { Packer } from "./packer.js";
 import { startWatcher } from "./watcher.js";
 import { runExplainMode } from "./explainer.js";
 import { setVerbose, error as logError } from "./logger.js";
 
 const VERSION = "4.0.0";
-
-/**
- * Write config template to file with directory creation
- */
-async function writeConfigTemplate(filename: string) {
-  const template = createConfigTemplate();
-
-  try {
-    try {
-      await fs.access(filename);
-      console.error(`❌ File '${filename}' already exists. Use a different name or delete the existing file.`);
-      process.exit(1);
-    } catch {
-      // File doesn't exist, proceed
-    }
-
-    const dir = path.dirname(filename);
-    if (dir && dir !== '.' && dir !== '') {
-      try {
-        await fs.access(dir);
-      } catch {
-        console.log(`📁 Directory '${dir}' does not exist.`);
-
-        const readline = await import('readline');
-        const rl = readline.createInterface({
-          input: process.stdin,
-          output: process.stdout
-        });
-
-        const answer = await new Promise<string>((resolve) => {
-          rl.question('Would you like to create it? (y/n): ', resolve);
-        });
-        rl.close();
-
-        if (answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes') {
-          await fs.mkdir(dir, { recursive: true });
-          console.log(`✅ Created directory: ${dir}`);
-        } else {
-          console.log('❌ Directory creation cancelled.');
-          process.exit(1);
-        }
-      }
-    }
-
-    await fs.writeFile(filename, template, 'utf8');
-    console.log(`✅ Created config template: ${filename}`);
-    console.log(`\nEdit the file and then run:`);
-    console.log(`  packx -f ${filename}`);
-  } catch (error) {
-    console.error(`❌ Failed to create config file: ${error}`);
-    process.exit(1);
-  }
-}
 
 /**
  * Copy text to clipboard
@@ -168,16 +114,6 @@ function printSummary(
 }
 
 async function main() {
-  // Check for init command first
-  if (process.argv[2] === 'init') {
-    let filename = process.argv[3] || 'pack-config.ini';
-    if (filename && !path.extname(filename)) {
-      filename = `${filename}.ini`;
-    }
-    await writeConfigTemplate(filename);
-    process.exit(0);
-  }
-
   // Resolve configuration
   const { options, parsed, shouldExit } = await resolveConfig(process.argv.slice(2));
 
@@ -216,7 +152,8 @@ async function main() {
   // For interactive mode, we need to get candidates first
   if (options.interactive && process.stdin.isTTY) {
     // Use packer to discover files (but not process them yet)
-    const tempPacker = new Packer({ ...options, interactive: false });
+    // Temporarily disable packignore to show all files (they'll start unselected)
+    const tempPacker = new Packer({ ...options, interactive: false, usePackignore: false });
     const tempResult = await tempPacker.pack();
 
     if (tempResult.matchedFiles.length === 0) {
@@ -237,6 +174,20 @@ async function main() {
         ext: r.ext,
       }));
 
+      // Load packignore patterns to determine which files start unselected
+      const packignoreIndices = new Set<number>();
+      if (options.usePackignore) {
+        const packignore = await loadPackignore(options.roots[0] || '.');
+        for (let i = 0; i < fileChoices.length; i++) {
+          if (packignore.ignores(fileChoices[i].relPath)) {
+            packignoreIndices.add(i);
+          }
+        }
+        if (packignoreIndices.size > 0) {
+          log(`📋 .packignore: ${packignoreIndices.size} files will start unselected\n`);
+        }
+      }
+
       // Get the search pattern for preview highlighting
       const searchPattern = packer.getPattern();
 
@@ -247,6 +198,7 @@ async function main() {
         showPreview: true,
         searchPattern,
         contextLines: options.contextLines,
+        packignoreIndices,
       });
 
       if (selected.length === 0) {
@@ -259,27 +211,59 @@ async function main() {
       const selectedTokens = selected.reduce((sum, file) => sum + (tokenMap.get(file) || 0), 0);
       log(`\n✅ Selected ${selected.length} file(s) — ${formatTokenCount(selectedTokens)} tokens\n`);
 
-      // Ask about saving .ini config
-      const configFilename = await input({
-        message: "Save as .ini config (clear to skip):",
-        default: "pack-config.ini",
+      // Determine unselected files for potential .packignore update
+      const selectedSet = new Set(selected);
+      const unselectedFiles = fileChoices.filter(f => !selectedSet.has(f.path));
+
+      // Offer to save unselected patterns to .packignore
+      if (unselectedFiles.length > 0) {
+        const saveToPackignore = await confirm({
+          message: `Save ${unselectedFiles.length} excluded file(s) to .packignore?`,
+          default: false,
+        });
+
+        if (saveToPackignore) {
+          const packignorePath = path.join(process.cwd(), '.packignore');
+          const excludedPaths = unselectedFiles.map(f => f.path);
+          const packignoreContent = generatePackignore(excludedPaths, process.cwd());
+
+          // Append to existing .packignore or create new one
+          try {
+            await fs.access(packignorePath);
+            // File exists, append
+            await fs.appendFile(packignorePath, '\n' + packignoreContent, 'utf8');
+            log(`\n📝 Appended to: ${packignorePath}`);
+          } catch {
+            // File doesn't exist, create
+            await fs.writeFile(packignorePath, packignoreContent, 'utf8');
+            log(`\n📝 Created: ${packignorePath}`);
+          }
+        }
+      }
+
+      // Ask for output destination
+      const outputChoice = await select({
+        message: 'Output destination:',
+        choices: [
+          { name: '📋 Copy to clipboard', value: 'clipboard' },
+          { name: '📄 Write to file', value: 'file' },
+          { name: '🖥️  Print to stdout', value: 'stdout' },
+          { name: '⏭️  Skip output', value: 'skip' },
+        ],
       });
 
-      if (configFilename && configFilename.trim()) {
-        let filename = configFilename.trim();
-        if (!filename.endsWith('.ini')) {
-          filename += '.ini';
-        }
-        const searchStrings = normalizeStrings(parsed.strings).concat(normalizeStrings(parsed.s)).filter(Boolean);
-        const excludePatterns = normalizeStrings(parsed.exclude).concat(normalizeStrings(parsed.x)).filter(Boolean);
-        const configContent = generateIniConfig(selected, process.cwd(), {
-          searchStrings: searchStrings.length > 0 ? searchStrings : undefined,
-          excludePatterns: excludePatterns.length > 0 ? excludePatterns : undefined,
+      if (outputChoice === 'skip') {
+        log('\n✅ Selection complete. No output generated.');
+        process.exit(0);
+      }
+
+      // Get output file path if needed
+      let outputFile = options.outputFile;
+      if (outputChoice === 'file') {
+        outputFile = await input({
+          message: 'Output file path:',
+          default: 'packed.xml',
         });
-        const configPath = path.join(process.cwd(), filename);
-        await fs.writeFile(configPath, configContent, "utf8");
-        log(`\n💾 Saved config to: ${configPath}`);
-        log(`   Run again with: packx -f ${filename}\n`);
       }
 
       // Create new packer with only selected files
@@ -287,8 +271,14 @@ async function main() {
       const finalPacker = new Packer(selectedOptions);
       const result = await finalPacker.pack();
 
-      // Handle output
-      await handleOutput(result, options, log);
+      // Handle output based on user choice
+      const outputOptions = {
+        ...options,
+        toStdout: outputChoice === 'stdout',
+        outputFile: outputChoice === 'file' ? outputFile : undefined,
+        copyToClipboard: outputChoice === 'clipboard',
+      };
+      await handleOutput(result, outputOptions, log);
 
     } catch (error: any) {
       if (error.name === "ExitPromptError") {

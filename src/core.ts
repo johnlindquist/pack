@@ -17,7 +17,6 @@
 
 // Re-export types
 export type {
-  ParsedConfig,
   Argv,
   MatchPosition,
   ContextWindow,
@@ -54,11 +53,8 @@ export {
 
 // Re-export from config
 export {
-  parseConfigFile,
-  parseConfigContent,
   parseTransformRule,
-  generateIniConfig,
-  createConfigTemplate,
+  generatePackignore,
   classifyPositionalArgs,
   resolveConfig
 } from "./config.js";

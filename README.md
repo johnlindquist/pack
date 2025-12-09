@@ -9,11 +9,11 @@ Packx is a powerful CLI tool that filters repository files by content and extens
 # Quick install
 npm install -g packx
 
-# Create a config template
-packx init
-
 # Search and bundle
 packx -s "useState" -e "tsx" -o react-hooks.md
+
+# Interactive mode with file selection
+packx -s "error" -I
 ```
 
 ## Features
@@ -21,7 +21,7 @@ packx -s "useState" -e "tsx" -o react-hooks.md
 - 🔍 **Content-based filtering** - Only include files containing specific strings
 - 📁 **Smart defaults** - Searches common code files automatically (no extension flag needed!)
 - 🎨 **Flexible extensions** - Optionally filter by specific file types
-- 🔧 **Config files** - Save and reuse search patterns
+- 🚫 **Packignore support** - Use `.packignore` to exclude files (gitignore syntax)
 - ✂️ **Context lines** - Limit output to N lines around each match for focused results
 - ⚡ **High-performance** - Optional ripgrep integration for blazing fast searches
 - 🎯 **Precise** - Search for multiple strings with special character support
@@ -32,7 +32,6 @@ packx -s "useState" -e "tsx" -o react-hooks.md
 - 👁️ **Interactive mode** - File selection with live preview pane
 - 👀 **Watch mode** - Auto-update output when files change
 - 🔗 **Import following** - Automatically include imported dependencies
-- 🔒 **Content transforms** - Redact sensitive data before output
 
 ## Installation
 
@@ -59,7 +58,6 @@ pack --help  # Also available as 'pack'
 
 Prerequisites:
 - [Bun](https://bun.sh) (for building)
-- [Repomix](https://github.com/yamadashy/repomix) (installed automatically)
 
 ```bash
 # Clone the repository
@@ -118,14 +116,14 @@ source ~/.zshrc
 ### Quick Start
 
 ```bash
-# Create a search config
-packx init my-search
+# Search for strings and output to file
+packx -s "useState" -s "useEffect" -e "tsx" -o hooks.md
 
-# Edit it with your patterns
-nano my-search.ini
+# Interactive mode - select files visually
+packx -s "error" -I
 
-# Run the search
-packx -f my-search.ini -o results.md
+# Copy output to clipboard
+packx -s "TODO" -c
 ```
 
 ### Basic Usage
@@ -173,18 +171,6 @@ Exclude TypeScript declaration files:
 pack -s "interface" -e "ts" -x "d.ts"
 ```
 
-### With Repomix Options
-
-All Repomix flags work seamlessly:
-
-```bash
-pack -s "TODO" -s "FIXME" -e "ts,tsx" \
-  --compress \
-  --style xml \
-  -o todos.xml \
-  --remove-comments
-```
-
 ## Examples
 
 ### Find React Hooks
@@ -219,163 +205,81 @@ pack -s "import" -e "ts,tsx,jsx"
 pack -s "import" -e "ts,tsx" -e "jsx,js"
 ```
 
-## Config Files
+## .packignore
 
-Save your search patterns in reusable config files.
+Exclude files from being included using `.packignore` (uses gitignore syntax).
 
-### Quick Start with Config Files
+### Creating a .packignore
 
-```bash
-# Create a config file template (creates pack-config.ini)
-packx init
+Create a `.packignore` file in your project root:
 
-# Or specify a custom filename
-packx init my-search
-packx init focused-flag
-packx init api-endpoints.config
+```gitignore
+# Exclude test files
+*.test.ts
+*.spec.ts
+**/__tests__/**
 
-# Edit the created file
-nano pack-config.ini
+# Exclude generated files
+dist/
+build/
+*.generated.ts
 
-# Use the config file
-packx -f pack-config.ini
+# Exclude specific files
+src/legacy/**
 ```
 
-### Config File Format
+### Using .packignore
 
-The config file uses a simple INI-like format:
-
-```ini
-# Comments start with #
-
-[search]
-useState
-useEffect
-componentDidMount
-
-[extensions]
-ts
-tsx
-jsx
-
-[exclude]
-d.ts
-test.ts
-spec.ts
-
-[files]
-# Explicit file paths (optional)
-src/main.ts
-src/utils/helpers.ts
-
-[transforms]
-# Redaction rules: pattern = replacement
-sk-[a-zA-Z0-9]{48} = [REDACTED_API_KEY]
-/password/i = [REDACTED]
-```
-
-### Using Config Files
+The `.packignore` file is automatically loaded and applied:
 
 ```bash
-# Use config file
-pack -f my-search.ini
+# Files matching .packignore patterns are excluded
+packx -s "useState" -e "tsx"
+```
 
-# Combine with CLI arguments
-pack -f my-search.ini -s "extraSearch" -o output.xml
+### Ignoring .packignore
 
-# With Repomix options
-pack -f my-search.ini --compress --style markdown
+Use `--no-packignore` to disable the `.packignore` file:
+
+```bash
+# Include all files, ignoring .packignore
+packx -s "error" --no-packignore
+```
+
+### Interactive Mode and .packignore
+
+In interactive mode (`-I`), files matching `.packignore` are shown but start unselected. You can manually select them if needed:
+
+```bash
+# Files matching .packignore appear unselected
+packx -s "TODO" -I
+```
+
+After selection, you can save your unselected files to `.packignore`.
 
 ### Output to stdout
 
 Use `--stdout` to write the packed content to stdout (useful for piping). Summaries are written to stderr:
 
 ```bash
-packx -s "error" -l 2 --style markdown --stdout | tee errors.md
-
-Note: By default, Packx now runs in summary-only mode and does not write content to a file. Use `-o <file>` to write to a file or `--stdout` to stream content.
+packx -s "error" -l 2 --format markdown --stdout | tee errors.md
 ```
+
+Note: By default, Packx runs in summary-only mode and does not write content to a file. Use `-o <file>` to write to a file or `--stdout` to stream content.
 
 ### Path Globs and Files
 
-You can pass directories, files, or globs as positional args. Globs restrict the search scope and work with or without `-e`:
+You can pass directories, files, or globs as positional args:
 
 ```bash
 # Only shell scripts in scripts/
 packx scripts/*.sh --preview
 
 # All Markdown anywhere
-packx "**/*.md" -s "TODO" --style markdown
+packx "**/*.md" -s "TODO" --format markdown
 
 # Single file
 packx README.md -s "Features"
-```
-
-Note: Explicit include globs/files override `-x` excludes for those matches (e.g., `packx "**/*.ini" -x ini` still includes the `.ini` files you asked for).
-
-### Example Config Files
-
-**console-logs.ini** - Find all console statements:
-```ini
-[search]
-console.log
-console.error
-console.warn
-console.debug
-
-[extensions]
-js
-ts
-jsx
-tsx
-
-[exclude]
-node_modules
-dist
-build
-```
-
-**api-calls.ini** - Find API and network calls:
-```ini
-[search]
-fetch(
-axios
-$.ajax
-XMLHttpRequest
-/api/
-endpoint
-apiKey
-
-[extensions]
-ts
-tsx
-js
-jsx
-
-[exclude]
-test.
-spec.
-mock.
-```
-
-**react-hooks.ini** - Find React hooks:
-```ini
-[search]
-useState
-useEffect
-useCallback
-useMemo
-useRef
-useContext
-
-[extensions]
-tsx
-jsx
-
-[exclude]
-d.ts
-test.tsx
-__tests__
 ```
 
 ## CLI Options
@@ -393,6 +297,7 @@ __tests__
 | `--staged` | | Include only git staged files |
 | `--diff` | | Include only files changed from main branch |
 | `--dirty` | | Include only modified/untracked files |
+| `--no-packignore` | | Ignore .packignore file |
 
 ### Processing
 
@@ -435,8 +340,8 @@ __tests__
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--config` | | Load config file |
 | `--explain` | | Dry run with detailed logging (no output generated) |
+| `--verbose` | | Enable verbose error logging for debugging |
 | `--prompt` | `-p` | Append text to the end of output |
 | `--help` | `-h` | Show help |
 | `--version` | `-v` | Show version |
@@ -452,18 +357,6 @@ When no `-e` flag is specified, packx searches these file types:
 - **Documentation**: md, mdx, txt
 - **Scripts**: sh, bash, zsh, fish
 - **Data**: sql, graphql, gql
-
-### Repomix Pass-through Options
-
-All Repomix options work as normal:
-
-- `--compress` - Compress output
-- `--style <type>` - Output style (xml, markdown, plain)
-- `-o <file>` - Output filename
-- `--remove-comments` - Remove comments from code
-- `--token-count-tree` - Show token counts
-- `--instruction-file-path <file>` - Custom instructions file
-- And many more...
 
 ## Build from Source
 
@@ -509,6 +402,9 @@ Interactive mode features:
 - Context window highlighting when using `-l`
 - Tab to toggle focus between file list and preview
 - PgUp/PgDn to scroll preview content
+- Files matching `.packignore` start unselected (can be manually selected)
+- Save unselected files to `.packignore` after selection
+- Choose output destination: clipboard, file, or stdout
 
 ### Watch Mode
 
@@ -566,27 +462,6 @@ Supports:
 - ES6 imports (`import ... from`)
 - CommonJS requires (`require(...)`)
 - TypeScript path aliases
-
-### Content Transforms (Redaction)
-
-Redact sensitive information before output using config file transforms:
-
-```ini
-# pack-config.ini
-[search]
-apiKey
-
-[transforms]
-# Redact API keys
-sk-[a-zA-Z0-9]{48} = [REDACTED_OPENAI_KEY]
-ghp_[a-zA-Z0-9]{36} = [REDACTED_GITHUB_TOKEN]
-password\s*=\s*"[^"]+" = password="[REDACTED]"
-
-# Case-insensitive matching
-/secret/i = [SECRET]
-```
-
-Transforms are applied before any other processing.
 
 ### Explain Mode
 
@@ -734,7 +609,3 @@ Pull requests are welcome! Feel free to:
 ## License
 
 MIT
-
-## Credits
-
-Built on top of the excellent [Repomix](https://github.com/yamadashy/repomix) by @yamadashy.

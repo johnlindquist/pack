@@ -1,6 +1,5 @@
 import { describe, test, expect } from "bun:test";
 import {
-  parseConfigContent,
   parseTransformRule,
   applyTransforms,
 } from "./core";
@@ -70,75 +69,6 @@ describe("parseTransformRule", () => {
     expect(rule).not.toBeNull();
     expect(rule!.pattern.source).toBe("pattern");
     expect(rule!.replacement).toBe("replacement");
-  });
-});
-
-describe("parseConfigContent with transforms", () => {
-  test("parses [transforms] section", () => {
-    const content = `[transforms]
-secret = [REDACTED]
-password = [HIDDEN]`;
-    const config = parseConfigContent(content);
-    expect(config.transforms).toHaveLength(2);
-    expect(config.transforms[0].pattern.source).toBe("secret");
-    expect(config.transforms[0].replacement).toBe("[REDACTED]");
-    expect(config.transforms[1].pattern.source).toBe("password");
-    expect(config.transforms[1].replacement).toBe("[HIDDEN]");
-  });
-
-  test("parses [transform] section (alias)", () => {
-    const content = `[transform]
-secret = [REDACTED]`;
-    const config = parseConfigContent(content);
-    expect(config.transforms).toHaveLength(1);
-  });
-
-  test("parses [redact] section (alias)", () => {
-    const content = `[redact]
-secret = [REDACTED]`;
-    const config = parseConfigContent(content);
-    expect(config.transforms).toHaveLength(1);
-  });
-
-  test("ignores comments in transforms section", () => {
-    const content = `[transforms]
-# This is a comment
-secret = [REDACTED]
-# Another comment
-password = [HIDDEN]`;
-    const config = parseConfigContent(content);
-    expect(config.transforms).toHaveLength(2);
-  });
-
-  test("skips invalid transform rules", () => {
-    const content = `[transforms]
-valid = replacement
-no equals sign
-another valid = value`;
-    const config = parseConfigContent(content);
-    expect(config.transforms).toHaveLength(2);
-  });
-
-  test("combines transforms with other sections", () => {
-    const content = `[search]
-TODO
-
-[transforms]
-secret = [REDACTED]
-
-[extensions]
-ts`;
-    const config = parseConfigContent(content);
-    expect(config.search).toEqual(["TODO"]);
-    expect(config.extensions).toEqual(["ts"]);
-    expect(config.transforms).toHaveLength(1);
-  });
-
-  test("initializes empty transforms array by default", () => {
-    const content = `[search]
-TODO`;
-    const config = parseConfigContent(content);
-    expect(config.transforms).toEqual([]);
   });
 });
 
