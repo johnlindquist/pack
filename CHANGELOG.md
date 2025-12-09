@@ -1,3 +1,10 @@
+## [4.6.1](https://github.com/johnlindquist/pack/compare/v4.6.0...v4.6.1) (2025-12-09)
+
+
+### Performance Improvements
+
+* optimize interactive UI with memoization and async file I/O ([e42b584](https://github.com/johnlindquist/pack/commit/e42b584a7d9eb622cc3ee563eefde5053184af51))
+
 # [4.6.0](https://github.com/johnlindquist/pack/compare/v4.5.0...v4.6.0) (2025-12-09)
 
 
