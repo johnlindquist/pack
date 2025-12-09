@@ -17,7 +17,7 @@ import { input, select, confirm } from "@inquirer/prompts";
 import { printHelp } from "./cli.js";
 import { resolveConfig, generatePackignore } from "./config.js";
 import { formatTokenCount, getTokenWarning } from "./analysis.js";
-import { treeCheckbox, type FileChoice } from "./ui/interactive.js";
+import { treeCheckbox, type FileChoice, type InteractiveResult } from "./ui/interactive.js";
 import { loadPackignore } from "./scanner.js";
 import { Packer } from "./packer.js";
 import { startWatcher } from "./watcher.js";
@@ -191,7 +191,7 @@ async function main() {
       // Get the search pattern for preview highlighting
       const searchPattern = packer.getPattern();
 
-      const selected = await treeCheckbox({
+      const result = await treeCheckbox({
         message: "Select files to bundle:",
         files: fileChoices,
         pageSize: 20,
@@ -200,6 +200,9 @@ async function main() {
         contextLines: options.contextLines,
         packignoreIndices,
       });
+
+      const selected = result.selectedPaths;
+      const globPattern = result.globPattern;
 
       if (selected.length === 0) {
         console.log("\n⚠️  No files selected. Exiting.");
@@ -215,8 +218,30 @@ async function main() {
       const selectedSet = new Set(selected);
       const unselectedFiles = fileChoices.filter(f => !selectedSet.has(f.path));
 
-      // Offer to save unselected patterns to .packignore
-      if (unselectedFiles.length > 0) {
+      // Offer to save glob pattern to .packignore if one was used
+      if (globPattern) {
+        const saveGlobToPackignore = await confirm({
+          message: `Save glob pattern "${globPattern}" to .packignore?`,
+          default: false,
+        });
+
+        if (saveGlobToPackignore) {
+          const packignorePath = path.join(process.cwd(), '.packignore');
+          const patternContent = `\n# Added from interactive filter\n${globPattern}\n`;
+
+          try {
+            await fs.access(packignorePath);
+            // File exists, append
+            await fs.appendFile(packignorePath, patternContent, 'utf8');
+            log(`\n📝 Added pattern to: ${packignorePath}`);
+          } catch {
+            // File doesn't exist, create
+            await fs.writeFile(packignorePath, `# Pack exclusions\n${globPattern}\n`, 'utf8');
+            log(`\n📝 Created: ${packignorePath}`);
+          }
+        }
+      } else if (unselectedFiles.length > 0) {
+        // Offer to save unselected files to .packignore
         const saveToPackignore = await confirm({
           message: `Save ${unselectedFiles.length} excluded file(s) to .packignore?`,
           default: false,
@@ -269,7 +294,7 @@ async function main() {
       // Create new packer with only selected files
       const selectedOptions = { ...options, explicitFiles: selected, interactive: false };
       const finalPacker = new Packer(selectedOptions);
-      const result = await finalPacker.pack();
+      const packResult = await finalPacker.pack();
 
       // Handle output based on user choice
       const outputOptions = {
@@ -278,7 +303,7 @@ async function main() {
         outputFile: outputChoice === 'file' ? outputFile : undefined,
         copyToClipboard: outputChoice === 'clipboard',
       };
-      await handleOutput(result, outputOptions, log);
+      await handleOutput(packResult, outputOptions, log);
 
     } catch (error: any) {
       if (error.name === "ExitPromptError") {

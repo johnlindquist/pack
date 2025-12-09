@@ -6,9 +6,16 @@
 
 import { createPrompt, useState, useKeypress, useRef, isEnterKey, isSpaceKey, isUpKey, isDownKey } from "@inquirer/core";
 import { readFileSync, existsSync } from "node:fs";
+import { Minimatch } from "minimatch";
 import { formatTokenCount } from "../analysis.js";
 import { extractContextWindows, formatContextWindows } from "../context.js";
 import type { FileChoice, TreeNode, TreeCheckboxConfig, ContextWindow } from "../types.js";
+
+// Result type that includes selection and optional glob pattern
+export type InteractiveResult = {
+  selectedPaths: string[];
+  globPattern?: string;  // The glob pattern used to filter (if any)
+};
 
 // Re-export types for convenience
 export type { FileChoice, TreeNode, TreeCheckboxConfig } from "../types.js";
@@ -193,8 +200,9 @@ export function buildFileTree(files: FileChoice[]): { tree: TreeNode[], flatNode
 
 /**
  * Tree checkbox prompt for file selection with optional preview pane
+ * Returns InteractiveResult with selected paths and optional glob pattern
  */
-export const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, done) => {
+export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>((config, done) => {
   const {
     files,
     pageSize = 20,
@@ -218,7 +226,9 @@ export const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, 
   const [selected, setSelected] = useState<Set<number>>(initialSelected);
   const [showExtensions, setShowExtensions] = useState<boolean>(false);
   const [filterText, setFilterText] = useState<string>('');
+  const [filterCursor, setFilterCursor] = useState<number>(0);
   const [isFiltering, setIsFiltering] = useState<boolean>(false);
+  const [isGlobMode, setIsGlobMode] = useState<boolean>(false);  // Track if filter contains glob chars
 
   // Preview state
   const [previewScroll, setPreviewScroll] = useState<number>(0);
@@ -246,8 +256,23 @@ export const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, 
 
     // Apply filter if active
     if (filterText) {
-      const lowerFilter = filterText.toLowerCase();
-      nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
+      // Check if it's a glob pattern
+      const hasGlobChars = /[\*\?\[\]\{\}!]/.test(filterText);
+      if (hasGlobChars) {
+        // Use minimatch for glob matching
+        try {
+          const mm = new Minimatch(filterText, { nocase: true, matchBase: true });
+          nodes = nodes.filter(node => mm.match(node.path) || mm.match(node.name));
+        } catch {
+          // Invalid glob, fall back to substring match
+          const lowerFilter = filterText.toLowerCase();
+          nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
+        }
+      } else {
+        // Simple substring match
+        const lowerFilter = filterText.toLowerCase();
+        nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
+      }
     }
     return nodes;
   }
@@ -306,7 +331,13 @@ export const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, 
         setCursor(0);
         return;
       }
-      const result = files.filter((_, i) => selected.has(i)).map(f => f.path);
+      const selectedPaths = files.filter((_, i) => selected.has(i)).map(f => f.path);
+      // Include glob pattern if one was used and has glob characters
+      const hasGlobChars = /[\*\?\[\]\{\}!]/.test(filterText);
+      const result: InteractiveResult = {
+        selectedPaths,
+        globPattern: hasGlobChars && filterText ? filterText : undefined,
+      };
       done(result);
       return;
     }
@@ -316,12 +347,45 @@ export const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, 
       if (key.name === 'escape') {
         setIsFiltering(false);
         setFilterText('');
+        setFilterCursor(0);
         setCursor(0);
+      } else if (key.name === 'left') {
+        // Move cursor left in filter text
+        setFilterCursor(Math.max(0, filterCursor - 1));
+      } else if (key.name === 'right') {
+        // Move cursor right in filter text
+        setFilterCursor(Math.min(filterText.length, filterCursor + 1));
+      } else if (key.name === 'home' || (key.ctrl && key.name === 'a')) {
+        // Move cursor to start
+        setFilterCursor(0);
+      } else if (key.name === 'end' || (key.ctrl && key.name === 'e')) {
+        // Move cursor to end
+        setFilterCursor(filterText.length);
       } else if (key.name === 'backspace') {
-        setFilterText(filterText.slice(0, -1));
+        // Delete character before cursor
+        if (filterCursor > 0) {
+          const newText = filterText.slice(0, filterCursor - 1) + filterText.slice(filterCursor);
+          setFilterText(newText);
+          setFilterCursor(filterCursor - 1);
+          setCursor(0);
+        }
+      } else if (key.name === 'delete') {
+        // Delete character at cursor
+        if (filterCursor < filterText.length) {
+          const newText = filterText.slice(0, filterCursor) + filterText.slice(filterCursor + 1);
+          setFilterText(newText);
+          setCursor(0);
+        }
+      } else if (key.ctrl && key.name === 'u') {
+        // Clear entire filter
+        setFilterText('');
+        setFilterCursor(0);
         setCursor(0);
       } else if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
-        setFilterText(filterText + key.sequence);
+        // Insert character at cursor position
+        const newText = filterText.slice(0, filterCursor) + key.sequence + filterText.slice(filterCursor);
+        setFilterText(newText);
+        setFilterCursor(filterCursor + 1);
         setCursor(0);
       }
       return;
@@ -502,10 +566,19 @@ export const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, 
 
   // Show filter input or help line
   let filterLine = '';
+  const hasGlobChars = /[\*\?\[\]\{\}!]/.test(filterText);
   if (isFiltering) {
-    filterLine = `\x1b[33m🔍 Filter: ${filterText}█\x1b[0m  \x1b[90m(enter to apply, esc to cancel)\x1b[0m`;
+    // Show cursor in filter text
+    const beforeCursor = filterText.slice(0, filterCursor);
+    const afterCursor = filterText.slice(filterCursor);
+    const cursorChar = afterCursor.length > 0 ? afterCursor[0] : ' ';
+    const restAfterCursor = afterCursor.slice(1);
+    const filterDisplay = `${beforeCursor}\x1b[7m${cursorChar}\x1b[0m\x1b[33m${restAfterCursor}`;
+    const modeHint = hasGlobChars ? ' (glob)' : '';
+    filterLine = `\x1b[33m🔍 Filter${modeHint}: ${filterDisplay}\x1b[0m  \x1b[90m(←→ move, enter apply, esc cancel, supports *.ts globs)\x1b[0m`;
   } else if (filterText) {
-    filterLine = `\x1b[33m🔍 Filter: "${filterText}"\x1b[0m  \x1b[90m(showing ${flatNodes.length} matches, esc to clear)\x1b[0m`;
+    const modeHint = hasGlobChars ? ' (glob)' : '';
+    filterLine = `\x1b[33m🔍 Filter${modeHint}: "${filterText}"\x1b[0m  \x1b[90m(showing ${flatNodes.length} matches, esc clear)\x1b[0m`;
   }
 
   // Determine if we should show preview
@@ -615,12 +688,12 @@ export const treeCheckbox = createPrompt<string[], TreeCheckboxConfig>((config, 
 });
 
 /**
- * Run interactive file selection and return selected file paths
+ * Run interactive file selection and return selected file paths with optional glob pattern
  */
 export async function runInteractiveSelection(
   files: { path: string; relPath: string; tokens: number; ext: string }[],
   options: { message?: string; pageSize?: number } = {}
-): Promise<string[]> {
+): Promise<InteractiveResult> {
   const { message = "Select files to bundle:", pageSize = 20 } = options;
 
   const fileChoices: FileChoice[] = files.map(f => ({
