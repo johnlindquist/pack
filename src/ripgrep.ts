@@ -4,6 +4,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { promises as fs } from "node:fs";
 import * as readline from "node:readline";
 import * as path from "node:path";
 import { DEFAULT_IGNORE_PATTERNS } from "./scanner.js";
@@ -80,8 +81,24 @@ export async function getRipgrepVersion(): Promise<string | null> {
 /**
  * Build ripgrep command arguments for file discovery
  */
-function buildRipgrepArgs(options: RipgrepSearchOptions): string[] {
+async function buildRipgrepArgs(options: RipgrepSearchOptions): Promise<string[]> {
   const args: string[] = [];
+
+  // Gitignore handling (must come early)
+  if (options.useGitignore !== false) {
+    // ripgrep respects .gitignore by default
+  } else {
+    args.push("--no-ignore");
+  }
+
+  // Check for .packignore file and add it if it exists (early in args list)
+  const packignorePath = path.join(path.resolve(options.root), '.packignore');
+  try {
+    await fs.access(packignorePath);
+    args.push("--ignore-file", packignorePath);
+  } catch {
+    // No .packignore file - continue without it
+  }
 
   // Output mode: files only (no line content)
   args.push("--files-with-matches");
@@ -99,22 +116,12 @@ function buildRipgrepArgs(options: RipgrepSearchOptions): string[] {
     args.push("--case-sensitive");
   }
 
-  // Gitignore handling
-  if (options.useGitignore !== false) {
-    // ripgrep respects .gitignore by default
-  } else {
-    args.push("--no-ignore");
-  }
-
   // Skip binary files
   args.push("--binary");
 
-  // Add extension filters using --type-add and --type
-  // Instead of type filtering, use glob patterns for extensions
-  for (const ext of options.extensions) {
-    const cleanExt = ext.startsWith(".") ? ext.slice(1) : ext;
-    args.push("--glob", `**/*.${cleanExt}`);
-  }
+  // Note: We don't use --glob for extensions because it overrides --ignore-file
+  // Instead, we filter by extension after ripgrep returns results
+  // Only add default and user exclude patterns as negative globs
 
   // Add default exclude patterns
   for (const pattern of DEFAULT_IGNORE_PATTERNS) {
@@ -172,7 +179,10 @@ export async function ripgrepSearch(
     };
   }
 
-  const args = buildRipgrepArgs(options);
+  const args = await buildRipgrepArgs(options);
+
+  // Debug: log the command being run (commented out for production)
+  // console.error("DEBUG ripgrep command:", "rg", args.join(" "));
 
   return new Promise((resolve) => {
     const proc = spawn("rg", args, {
@@ -225,8 +235,17 @@ export async function ripgrepSearch(
         return;
       }
 
+      // Filter by extensions (since we don't use --glob for extensions)
+      let filteredFiles = files;
+      if (options.extensions.size > 0) {
+        filteredFiles = files.filter((file) => {
+          const ext = path.extname(file).toLowerCase();
+          return options.extensions.has(ext) || options.extensions.has(ext.slice(1));
+        });
+      }
+
       resolve({
-        files,
+        files: filteredFiles,
         usedRipgrep: true,
       });
     });

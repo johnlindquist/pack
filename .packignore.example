@@ -1,0 +1,24 @@
+# Example .packignore file
+# Project-specific ignore patterns for packx (in addition to .gitignore)
+
+# Ignore test files
+*.test.ts
+*.spec.ts
+**/__tests__/**
+
+# Ignore generated files
+*.generated.ts
+*.d.ts
+
+# Ignore build configuration
+tsconfig.json
+webpack.config.js
+vite.config.ts
+
+# Ignore documentation
+*.md
+docs/
+
+# But include specific important files (negation)
+!README.md
+!CHANGELOG.md

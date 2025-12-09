@@ -8,6 +8,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import {
   loadGitignore,
+  loadPackignore,
   scanDirectory,
   filterByContent,
   hasGlobChars,
@@ -129,6 +130,68 @@ dist/
   });
 });
 
+describe("loadPackignore", () => {
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "packx-packignore-test-"));
+
+    // Create a .packignore file
+    await fs.writeFile(path.join(tmpDir, ".packignore"), `
+# Pack-specific ignores
+test/fixtures/
+*.generated.ts
+*.mock.js
+# But include this specific test
+!test/fixtures/important.ts
+`);
+  });
+
+  afterAll(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("loads .packignore rules", async () => {
+    const ig = await loadPackignore(tmpDir);
+    expect(ig.ignores("test/fixtures/data.json")).toBe(true);
+    expect(ig.ignores("src/types.generated.ts")).toBe(true);
+    expect(ig.ignores("utils.mock.js")).toBe(true);
+  });
+
+  test("does not ignore non-matching paths", async () => {
+    const ig = await loadPackignore(tmpDir);
+    expect(ig.ignores("src/index.ts")).toBe(false);
+    expect(ig.ignores("test/unit.test.ts")).toBe(false);
+  });
+
+  test("returns empty ignore for directory without .packignore", async () => {
+    const emptyDir = await fs.mkdtemp(path.join(os.tmpdir(), "packx-no-packignore-"));
+    const ig = await loadPackignore(emptyDir);
+    expect(ig.ignores("anything.ts")).toBe(false);
+    await fs.rm(emptyDir, { recursive: true, force: true });
+  });
+
+  test("supports negation patterns", async () => {
+    // Create a new directory with proper negation pattern test
+    const negDir = await fs.mkdtemp(path.join(os.tmpdir(), "packx-negation-test-"));
+
+    // Create .packignore with pattern and negation
+    await fs.writeFile(path.join(negDir, ".packignore"), `
+*.generated.ts
+!important.generated.ts
+`);
+
+    const ig = await loadPackignore(negDir);
+    // *.generated.ts should be ignored
+    expect(ig.ignores("types.generated.ts")).toBe(true);
+    expect(ig.ignores("api.generated.ts")).toBe(true);
+    // But !important.generated.ts should not be ignored (negation)
+    expect(ig.ignores("important.generated.ts")).toBe(false);
+
+    await fs.rm(negDir, { recursive: true, force: true });
+  });
+});
+
 describe("scanDirectory", () => {
   let tmpDir: string;
 
@@ -194,6 +257,23 @@ describe("scanDirectory", () => {
     const fileNames = files.map(f => path.basename(f));
     expect(fileNames).toContain("main.ts");
     expect(fileNames).not.toContain("debug.log"); // .gitignore excludes *.log
+  });
+
+  test("respects .packignore in addition to .gitignore", async () => {
+    // Create .packignore
+    await fs.writeFile(path.join(tmpDir, ".packignore"), "helper.ts\n");
+
+    const tsExt = new Set([".ts"]);
+    const files = await scanDirectory(tmpDir, tsExt, [], false, true);
+
+    const fileNames = files.map(f => path.basename(f));
+    expect(fileNames).toContain("main.ts");
+    expect(fileNames).toContain("utils.ts");
+    expect(fileNames).not.toContain("helper.ts"); // .packignore excludes helper.ts
+    expect(fileNames).not.toContain("pkg.ts"); // node_modules still ignored
+
+    // Clean up
+    await fs.unlink(path.join(tmpDir, ".packignore"));
   });
 });
 

@@ -12,7 +12,7 @@ import pLimit from "p-limit";
 import type { PackerOptions, FileStats, OutputChunk, SkippedFile } from "./types.js";
 import { buildPattern } from "./utils.js";
 import { isGitRepository, getGitStagedFiles, getGitDirtyFiles, getGitDiffFiles } from "./git.js";
-import { loadGitignore, DEFAULT_IGNORE_PATTERNS, expandWithRelatedFiles } from "./scanner.js";
+import { loadGitignore, loadPackignore, DEFAULT_IGNORE_PATTERNS, expandWithRelatedFiles } from "./scanner.js";
 import { expandWithDependencies } from "./dependencies.js";
 import { isBinaryFile, countTokens, analyzeFile } from "./analysis.js";
 import { extractContextWindows, formatContextWindows } from "./context.js";
@@ -271,6 +271,7 @@ export class Packer {
       for (const root of options.roots) {
         const absRoot = path.resolve(root);
         const gitignore = await loadGitignore(absRoot);
+        const packignore = await loadPackignore(absRoot);
 
         // Build glob patterns
         const patterns: string[] = [];
@@ -292,7 +293,7 @@ export class Packer {
 
           for (const file of files) {
             const relPath = path.relative(absRoot, file);
-            if (!gitignore.ignores(relPath)) {
+            if (!gitignore.ignores(relPath) && !packignore.ignores(relPath)) {
               candidates.add(file);
             }
           }

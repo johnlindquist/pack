@@ -87,6 +87,25 @@ export async function loadGitignore(dir: string): Promise<Ignore> {
 }
 
 /**
+ * Load and parse .packignore file from a directory
+ * .packignore rules are applied in addition to .gitignore rules
+ */
+export async function loadPackignore(dir: string): Promise<Ignore> {
+  const ig = ignore();
+  const packignorePath = path.join(path.resolve(dir), '.packignore');
+
+  try {
+    await fs.access(packignorePath);
+    const content = await fs.readFile(packignorePath, 'utf8');
+    ig.add(content);
+  } catch {
+    // No .packignore file - return empty ignore
+  }
+
+  return ig;
+}
+
+/**
  * Scan directory for files matching extension filters
  */
 export async function scanDirectory(
@@ -101,6 +120,9 @@ export async function scanDirectory(
 
   // Load .gitignore rules
   const gitignore = useGitignore ? await loadGitignore(absRoot) : ignore();
+
+  // Load .packignore rules (always loaded, applied after .gitignore)
+  const packignore = await loadPackignore(absRoot);
 
   // Build glob patterns for each extension
   const patterns: string[] = [];
@@ -125,7 +147,7 @@ export async function scanDirectory(
     for (const file of files) {
       // Apply .gitignore filtering
       const relPath = path.relative(absRoot, file);
-      if (!gitignore.ignores(relPath)) {
+      if (!gitignore.ignores(relPath) && !packignore.ignores(relPath)) {
         candidates.push(file);
       }
     }
