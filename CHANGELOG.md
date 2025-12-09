@@ -1,3 +1,10 @@
+# [4.2.0](https://github.com/johnlindquist/pack/compare/v4.1.0...v4.2.0) (2025-12-08)
+
+
+### Features
+
+* auto-load pack-config.ini when present ([99f57e0](https://github.com/johnlindquist/pack/commit/99f57e09421157bf043cbbc7d3eb2f32c84adae6))
+
 # [4.1.0](https://github.com/johnlindquist/pack/compare/v4.0.0...v4.1.0) (2025-12-08)
 
 
