@@ -255,3 +255,9 @@ export type OutputChunk = {
   tokens: number;
   chars: number;
 };
+
+export type SkippedFile = {
+  path: string;
+  reason: 'oversized';
+  tokens: number;
+};

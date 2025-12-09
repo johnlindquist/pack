@@ -9,7 +9,7 @@ import { glob } from "glob";
 import { Minimatch } from "minimatch";
 import pLimit from "p-limit";
 
-import type { PackerOptions, FileStats, OutputChunk } from "./types.js";
+import type { PackerOptions, FileStats, OutputChunk, SkippedFile } from "./types.js";
 import { buildPattern } from "./utils.js";
 import { isGitRepository, getGitStagedFiles, getGitDirtyFiles, getGitDiffFiles } from "./git.js";
 import { loadGitignore, DEFAULT_IGNORE_PATTERNS, expandWithRelatedFiles } from "./scanner.js";
@@ -34,6 +34,7 @@ export type PackResult = {
   candidatesFound: number; // Number of files found before content filtering
   usedRipgrep?: boolean; // Whether ripgrep was used for discovery
   chunks?: OutputChunk[];  // Populated when maxTokens is set
+  skippedFiles?: SkippedFile[];  // Files skipped due to exceeding token limits
 };
 
 /**
@@ -532,7 +533,7 @@ export class Packer {
 
     // Check if we need to split into chunks
     if (options.maxTokens && totalTokens > options.maxTokens) {
-      const chunks = this.splitIntoChunks(fileResults, relativePaths, options.maxTokens);
+      const { chunks, skippedFiles } = this.splitIntoChunks(fileResults, relativePaths, options.maxTokens);
 
       // Return combined result with chunks
       return {
@@ -545,6 +546,7 @@ export class Packer {
         matchedFiles: files,
         candidatesFound,
         chunks,
+        skippedFiles: skippedFiles.length > 0 ? skippedFiles : undefined,
       };
     }
 
@@ -695,9 +697,10 @@ export class Packer {
     fileResults: Array<{ relPath: string; fileOutput: string; tokens: number; size: number; matchCount: number; windowCount: number }>,
     relativePaths: string[],
     maxTokens: number
-  ): OutputChunk[] {
+  ): { chunks: OutputChunk[]; skippedFiles: SkippedFile[] } {
     const { options } = this;
     const chunks: OutputChunk[] = [];
+    const skippedFiles: SkippedFile[] = [];
 
     // Estimate header/footer token overhead per chunk
     const sampleHeader = createHeader(options.outputStyle, 1, ['sample.ts'], options.contextLines);
@@ -760,14 +763,13 @@ export class Packer {
     for (const result of fileResults) {
       if (!result.fileOutput) continue;
 
-      // If single file exceeds available tokens, it gets its own chunk
+      // If single file exceeds available tokens, skip it entirely
       if (result.tokens > availableTokens) {
-        // Flush current chunk first
-        flushChunk();
-        // Add oversized file as its own chunk
-        currentChunkFiles = [result];
-        currentChunkTokens = result.tokens;
-        flushChunk();
+        skippedFiles.push({
+          path: result.relPath,
+          reason: 'oversized',
+          tokens: result.tokens
+        });
         continue;
       }
 
@@ -801,6 +803,6 @@ export class Packer {
       }
     }
 
-    return chunks;
+    return { chunks, skippedFiles };
   }
 }

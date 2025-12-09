@@ -23,13 +23,19 @@ function createTestOptions(overrides: Partial<PackerOptions> = {}): PackerOption
     contextLines: undefined,
     smartContext: false,
     includeRelated: false,
+    followImports: false,
+    transforms: [],
     outputStyle: 'xml',
     outputFile: undefined,
     copyToClipboard: false,
     toStdout: false,
     previewOnly: false,
     interactive: false,
+    watch: false,
     promptText: undefined,
+    useRipgrep: 'auto',
+    noCache: false,
+    explainMode: false,
     ...overrides,
   };
 }
@@ -61,9 +67,10 @@ describe("Token splitting logic", () => {
     await fs.mkdir(testDir, { recursive: true });
 
     // Create several test files with known content
-    const fileContent1 = "// File 1\n" + "const a = 1;\n".repeat(100);
-    const fileContent2 = "// File 2\n" + "const b = 2;\n".repeat(100);
-    const fileContent3 = "// File 3\n" + "const c = 3;\n".repeat(100);
+    // Each file should be large enough to force chunking but small enough to fit individually
+    const fileContent1 = "// File 1\n" + "const a = 1;\n".repeat(200);
+    const fileContent2 = "// File 2\n" + "const b = 2;\n".repeat(200);
+    const fileContent3 = "// File 3\n" + "const c = 3;\n".repeat(200);
 
     await fs.writeFile(path.join(testDir, "file1.ts"), fileContent1);
     await fs.writeFile(path.join(testDir, "file2.ts"), fileContent2);
@@ -91,7 +98,7 @@ describe("Token splitting logic", () => {
   test("chunks output when exceeding maxTokens limit", async () => {
     const options = createTestOptions({
       roots: [testDir],
-      maxTokens: 500, // Low limit to force chunking
+      maxTokens: 2000, // Higher limit to allow chunking without skipping
     });
 
     const packer = new Packer(options);
@@ -104,7 +111,7 @@ describe("Token splitting logic", () => {
   test("each chunk has proper headers", async () => {
     const options = createTestOptions({
       roots: [testDir],
-      maxTokens: 500,
+      maxTokens: 2000,
       outputStyle: 'xml',
     });
 
@@ -127,7 +134,7 @@ describe("Token splitting logic", () => {
   test("markdown chunks have proper headers", async () => {
     const options = createTestOptions({
       roots: [testDir],
-      maxTokens: 500,
+      maxTokens: 2000,
       outputStyle: 'markdown',
     });
 
@@ -147,7 +154,7 @@ describe("Token splitting logic", () => {
   test("chunk numbers are sequential", async () => {
     const options = createTestOptions({
       roots: [testDir],
-      maxTokens: 500,
+      maxTokens: 2000,
     });
 
     const packer = new Packer(options);
@@ -165,7 +172,7 @@ describe("Token splitting logic", () => {
   test("all files are distributed across chunks", async () => {
     const options = createTestOptions({
       roots: [testDir],
-      maxTokens: 500,
+      maxTokens: 2000,
     });
 
     const packer = new Packer(options);
@@ -202,6 +209,63 @@ describe("Token splitting logic", () => {
         expect(chunk.tokens).toBeLessThan(maxTokens * 1.5);
       }
     }
+  });
+
+  test("skips oversized files and tracks them", async () => {
+    const options = createTestOptions({
+      roots: [testDir],
+      maxTokens: 500, // Very low limit to force all files to be skipped
+    });
+
+    const packer = new Packer(options);
+    const result = await packer.pack();
+
+    // All files should be skipped
+    expect(result.skippedFiles).toBeDefined();
+    expect(result.skippedFiles!.length).toBe(3);
+
+    // Each skipped file should have the correct properties
+    for (const skipped of result.skippedFiles!) {
+      expect(skipped.reason).toBe('oversized');
+      expect(skipped.tokens).toBeGreaterThan(0);
+      expect(skipped.path).toBeTruthy();
+    }
+
+    // No chunks should be created when all files are skipped
+    expect(result.chunks).toBeDefined();
+    expect(result.chunks!.length).toBe(0);
+  });
+
+  test("tracks both chunked and skipped files separately", async () => {
+    // Create a mix: one small file and one large file
+    const mixedTestDir = path.join(process.cwd(), "test-mixed-sizes");
+    await fs.mkdir(mixedTestDir, { recursive: true });
+
+    const smallFile = "const x = 1;\n"; // Small file
+    const largeFile = "const y = 2;\n".repeat(1000); // Large file
+
+    await fs.writeFile(path.join(mixedTestDir, "small.ts"), smallFile);
+    await fs.writeFile(path.join(mixedTestDir, "large.ts"), largeFile);
+
+    const options = createTestOptions({
+      roots: [mixedTestDir],
+      maxTokens: 800, // Limit that allows small but not large
+    });
+
+    const packer = new Packer(options);
+    const result = await packer.pack();
+
+    // Should have chunks with the small file
+    expect(result.chunks).toBeDefined();
+    expect(result.chunks!.length).toBeGreaterThan(0);
+
+    // Should have the large file skipped
+    expect(result.skippedFiles).toBeDefined();
+    expect(result.skippedFiles!.length).toBe(1);
+    expect(result.skippedFiles![0].path).toContain("large.ts");
+
+    // Cleanup
+    await fs.rm(mixedTestDir, { recursive: true, force: true });
   });
 });
 

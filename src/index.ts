@@ -377,11 +377,21 @@ async function main() {
  * Handle output: write to file, stdout, or clipboard
  */
 async function handleOutput(
-  result: { output: string; files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[]; usedRipgrep?: boolean; chunks?: any[] },
+  result: { output: string; files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[]; usedRipgrep?: boolean; chunks?: any[]; skippedFiles?: Array<{ path: string; reason: 'oversized'; tokens: number }> },
   options: { toStdout: boolean; outputFile?: string; copyToClipboard: boolean; contextLines?: number; maxTokens?: number },
   log: (msg: string) => void
 ) {
   const summaryOnly = !options.toStdout && !options.outputFile && !options.copyToClipboard;
+
+  // Print warning for skipped files (to stderr)
+  if (result.skippedFiles && result.skippedFiles.length > 0) {
+    const errorLog = (msg: string) => console.error(msg);
+    errorLog(`\n⚠️  Skipped ${result.skippedFiles.length} file(s) exceeding token limit:`);
+    for (const skipped of result.skippedFiles) {
+      errorLog(`   ${skipped.path} (${skipped.tokens.toLocaleString()} tokens)`);
+    }
+    errorLog('');
+  }
 
   log(`🧩 Packing ${result.matchedFiles.length} file(s)...`);
 
