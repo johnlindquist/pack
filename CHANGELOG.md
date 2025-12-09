@@ -1,3 +1,23 @@
+# [4.4.0](https://github.com/johnlindquist/pack/compare/v4.3.0...v4.4.0) (2025-12-09)
+
+
+### Bug Fixes
+
+* handle oversized files in token-based chunking ([c0efd03](https://github.com/johnlindquist/pack/commit/c0efd03e9ad09e8467c0cee655b7351599f26132))
+* Update git-project fixture for e2e tests ([ee59376](https://github.com/johnlindquist/pack/commit/ee5937699a6c8cd0e919d38f009b992c2ae0b3a0))
+
+
+### Features
+
+* add .packignore file support ([13f21fd](https://github.com/johnlindquist/pack/commit/13f21fdc269727d4aa3414914c9a5c396b4061f4))
+* ensure cache portability with relative path keys ([161b4e5](https://github.com/johnlindquist/pack/commit/161b4e5667b4078058b94c073135060995b8b6a4))
+* implement structured verbose error logging ([502240f](https://github.com/johnlindquist/pack/commit/502240f890f09ab3e1144023f2e89ba5f9762774))
+
+
+### Performance Improvements
+
+* stream child process output to prevent memory exhaustion ([e396743](https://github.com/johnlindquist/pack/commit/e396743a94f697504dae602483aae82c614e3519))
+
 # [4.3.0](https://github.com/johnlindquist/pack/compare/v4.2.0...v4.3.0) (2025-12-09)
 
 
