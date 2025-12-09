@@ -1,3 +1,24 @@
+# [4.3.0](https://github.com/johnlindquist/pack/compare/v4.2.0...v4.3.0) (2025-12-09)
+
+
+### Bug Fixes
+
+* await async stripComments in formatFileAsJsonl ([47ee338](https://github.com/johnlindquist/pack/commit/47ee3382538ba931bced3e2a64e84bfceae2bdac))
+
+
+### Features
+
+* add --explain flag for dry run with detailed logging ([990d346](https://github.com/johnlindquist/pack/commit/990d346ee4e595f3b77e39cf7b8c457005ce1b8c))
+* add --follow-imports flag for AST-based dependency discovery ([0131a66](https://github.com/johnlindquist/pack/commit/0131a6695b435821fa73012d4120bc9f77c2f98e))
+* add --max-tokens flag for automatic output splitting ([1d575e5](https://github.com/johnlindquist/pack/commit/1d575e5aa91898596c2f4c525d7da4eaa2944c50))
+* add content transformation hooks for redacting sensitive information ([c3a65e8](https://github.com/johnlindquist/pack/commit/c3a65e8e3d6770df09dc19172fefa676a7a734d3))
+* add interactive preview pane for file content ([f216870](https://github.com/johnlindquist/pack/commit/f2168704e54a81543e63ade611502dab44f68a56))
+* add JSONL output format (--format jsonl) ([0430936](https://github.com/johnlindquist/pack/commit/0430936134e30ea88705a7702a6da47bbbbf6614))
+* add watch mode for live development ([36be182](https://github.com/johnlindquist/pack/commit/36be182b5365df30d2c3935165ecab3069bdb0f3))
+* implement AST-based parsing for code analysis ([b64ccae](https://github.com/johnlindquist/pack/commit/b64ccae628df4f61c6258c1b85894cb5d006b59b))
+* implement caching for faster iterative runs ([bbcc3b5](https://github.com/johnlindquist/pack/commit/bbcc3b506d05419238288db8d575404735aba0e1))
+* integrate ripgrep for high-performance file search ([0f81746](https://github.com/johnlindquist/pack/commit/0f81746bf2204e563b9dfa3bfbc7c2319fc1f67b)), closes [hi#performance](https://github.com/hi/issues/performance)
+
 # [4.2.0](https://github.com/johnlindquist/pack/compare/v4.1.0...v4.2.0) (2025-12-08)
 
 
