@@ -51,15 +51,16 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^8.0.2",
+    "@types/yargs": "^17.0.35",
     "chokidar": "^5.0.0",
     "glob": "^13.0.0",
     "ignore": "^7.0.5",
     "js-tiktoken": "^1.0.21",
     "minimatch": "^10.1.1",
-    "mri": "^1.2.0",
     "p-limit": "^7.2.0",
     "tree-sitter-wasms": "^0.1.13",
-    "web-tree-sitter": "^0.25.10"
+    "web-tree-sitter": "^0.25.10",
+    "yargs": "^18.0.0"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",

@@ -249,7 +249,12 @@ export async function classifyPositionalArgs(
       if (st.isDirectory()) roots.push(arg);
       else if (st.isFile()) files.push(path.resolve(arg));
       else globs.push(arg);
-    } catch {
+    } catch (err) {
+      // If it's an absolute path that doesn't exist, that's an error
+      if (path.isAbsolute(arg)) {
+        throw new Error(`Path does not exist: ${arg}`);
+      }
+      // Otherwise treat as glob pattern
       globs.push(arg);
     }
   }
@@ -424,18 +429,16 @@ export async function resolveConfig(argv: string[]): Promise<{
   const promptParts = normalizeStrings((parsed as any).prompt ?? (parsed as any).p).filter(Boolean);
 
   // Determine ripgrep mode
-  // Note: mri treats --no-rg as negating the rg flag (rg: false)
-  // So we check for explicit false or the "no-rg" property
+  // Note: yargs treats --no-rg as a separate boolean flag
   let useRipgrep: PackerOptions['useRipgrep'] = 'auto';
   if (parsed.rg === true) {
     useRipgrep = 'force';
-  } else if (parsed["no-rg"] === true || parsed.rg === false) {
+  } else if (parsed["no-rg"] === true) {
     useRipgrep = 'disabled';
   }
 
-  // Parse max-tokens
-  const maxTokensRaw = parsed["max-tokens"] || (parsed as any).M;
-  const maxTokens = maxTokensRaw ? parseInt(String(maxTokensRaw), 10) : undefined;
+  // Parse max-tokens (yargs returns as number)
+  const maxTokens = parsed["max-tokens"] || (parsed as any).M;
 
 
   const options: PackerOptions = {
@@ -465,8 +468,8 @@ export async function resolveConfig(argv: string[]): Promise<{
     watch: Boolean(parsed.watch || parsed.w),
     promptText: promptParts.length > 0 ? promptParts.join('\n\n') : undefined,
     useRipgrep,
-    maxTokens: maxTokens && !isNaN(maxTokens) ? maxTokens : undefined,
-    noCache: parsed.cache === false,  // mri parses --no-cache as cache: false
+    maxTokens: maxTokens && typeof maxTokens === 'number' && !isNaN(maxTokens) ? maxTokens : undefined,
+    noCache: Boolean(parsed["no-cache"]),  // yargs parses --no-cache as a separate boolean
     explainMode: Boolean(parsed.explain),
   };
 

@@ -3,20 +3,28 @@
  * Centralized types to prevent circular dependencies
  */
 
-import type mri from "mri";
-
 // ============================================================================
 // CLI Types
 // ============================================================================
 
-export type Argv = mri.Argv & {
+export type Argv = {
+  // Positional arguments
+  _?: (string | number)[];
+  $0?: string;
+
   // Search & Filter
   strings?: string | string[];     // -s
+  s?: string | string[];           // alias
   "exclude-strings"?: string | string[]; // -S
+  S?: string | string[];           // alias
   include?: string | string[];     // -i
+  i?: string | string[];           // alias
   exclude?: string | string[];     // -x
+  x?: string | string[];           // alias
   regex?: boolean;                 // -R
+  R?: boolean;                     // alias
   "case-sensitive"?: boolean;      // -C
+  C?: boolean;                     // alias
 
   // Git
   staged?: boolean;
@@ -25,34 +33,46 @@ export type Argv = mri.Argv & {
 
   // Output
   output?: string;                 // -o
+  o?: string;                      // alias
   format?: string;                 // -f
+  f?: string;                      // alias
   copy?: boolean;                  // -c
+  c?: boolean;                     // alias
   lines?: number;                  // -l
+  l?: number;                      // alias
   preview?: boolean;               // --preview
   stdout?: boolean;
   "max-tokens"?: number;           // --max-tokens
+  M?: number;                      // alias
 
   // Processing
   "strip-comments"?: boolean;      // --strip-comments
   "no-comments"?: boolean;         // --no-comments (alias)
   minify?: boolean;                // --minify
   related?: boolean;               // -r
+  r?: boolean;                     // alias
   "follow-imports"?: boolean;      // --follow-imports
 
   // Instructions
   instruction?: string;
   prompt?: string | string[];      // -p
+  p?: string | string[];           // alias
+  template?: string;
 
   // Meta
   config?: string;
-  file?: string;                   // -f (legacy alias for config)
+  file?: string;                   // legacy alias for config
   interactive?: boolean;           // -I
+  I?: boolean;                     // alias
   watch?: boolean;                 // -w (watch mode)
+  w?: boolean;                     // alias
   explain?: boolean;               // --explain
   help?: boolean;                  // -h
+  h?: boolean;                     // alias
   version?: boolean;               // -v
-  "no-cache"?: boolean;            // --no-cache (parsed by mri as cache: false)
-  cache?: boolean;                  // Set to false when --no-cache is used
+  v?: boolean;                     // alias
+  "no-cache"?: boolean;            // --no-cache
+  cache?: boolean;                 // Set to false when --no-cache is used
 
   // Performance
   rg?: boolean;                    // --rg (use ripgrep)
@@ -60,7 +80,11 @@ export type Argv = mri.Argv & {
 
   // Legacy mappings
   extensions?: string | string[];
+  e?: string | string[];           // alias
   "exclude-extensions"?: string | string[];
+
+  // Style (alias for format)
+  style?: string;
 };
 
 // ============================================================================

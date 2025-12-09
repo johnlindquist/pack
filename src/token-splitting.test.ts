@@ -43,17 +43,17 @@ function createTestOptions(overrides: Partial<PackerOptions> = {}): PackerOption
 describe("CLI --max-tokens parsing", () => {
   test("parses --max-tokens flag", () => {
     const args = parseArgs(["--max-tokens", "5000"]);
-    expect(args["max-tokens"]).toBe("5000");
+    expect(args["max-tokens"]).toBe(5000);
   });
 
   test("parses -M short flag", () => {
     const args = parseArgs(["-M", "10000"]);
-    expect(args["max-tokens"]).toBe("10000");
+    expect(args["max-tokens"]).toBe(10000);
   });
 
   test("parses max-tokens with other flags", () => {
     const args = parseArgs(["-s", "TODO", "--max-tokens", "8000", "-o", "output.xml"]);
-    expect(args["max-tokens"]).toBe("8000");
+    expect(args["max-tokens"]).toBe(8000);
     expect(args.strings).toBe("TODO");
     expect(args.output).toBe("output.xml");
   });
