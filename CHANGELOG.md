@@ -1,3 +1,10 @@
+## [4.6.2](https://github.com/johnlindquist/pack/compare/v4.6.1...v4.6.2) (2025-12-09)
+
+
+### Performance Improvements
+
+* skip redundant preview state updates during navigation ([f6c3306](https://github.com/johnlindquist/pack/commit/f6c3306cb58b5f6391b4a9c34c2c796f023a3199))
+
 ## [4.6.1](https://github.com/johnlindquist/pack/compare/v4.6.0...v4.6.1) (2025-12-09)
 
 
