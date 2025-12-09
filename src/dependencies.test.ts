@@ -15,95 +15,95 @@ import {
 } from "./dependencies";
 
 describe("parseImports", () => {
-  test("parses ES6 default imports", () => {
+  test("parses ES6 default imports", async () => {
     const code = `import React from 'react';`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("react");
     expect(imports[0].isRelative).toBe(false);
   });
 
-  test("parses ES6 named imports", () => {
+  test("parses ES6 named imports", async () => {
     const code = `import { useState, useEffect } from 'react';`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("react");
   });
 
-  test("parses ES6 relative imports", () => {
+  test("parses ES6 relative imports", async () => {
     const code = `import { helper } from './utils';`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./utils");
     expect(imports[0].isRelative).toBe(true);
   });
 
-  test("parses ES6 parent directory imports", () => {
+  test("parses ES6 parent directory imports", async () => {
     const code = `import { config } from '../config';`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("../config");
     expect(imports[0].isRelative).toBe(true);
   });
 
-  test("parses namespace imports", () => {
+  test("parses namespace imports", async () => {
     const code = `import * as utils from './utils';`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./utils");
   });
 
-  test("parses side-effect imports", () => {
+  test("parses side-effect imports", async () => {
     const code = `import './polyfills';`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./polyfills");
   });
 
-  test("parses CommonJS require", () => {
+  test("parses CommonJS require", async () => {
     const code = `const fs = require('fs');`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("fs");
   });
 
-  test("parses CommonJS require with relative path", () => {
+  test("parses CommonJS require with relative path", async () => {
     const code = `const utils = require('./utils');`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./utils");
     expect(imports[0].isRelative).toBe(true);
   });
 
-  test("parses dynamic import", () => {
+  test("parses dynamic import", async () => {
     const code = `const module = await import('./dynamic');`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./dynamic");
   });
 
-  test("parses export from", () => {
+  test("parses export from", async () => {
     const code = `export { foo, bar } from './module';`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./module");
   });
 
-  test("parses export * from", () => {
+  test("parses export * from", async () => {
     const code = `export * from './types';`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./types");
   });
 
-  test("parses multiple imports", () => {
+  test("parses multiple imports", async () => {
     const code = `
 import React from 'react';
 import { helper } from './utils';
 import type { Config } from '../types';
 const fs = require('fs');
     `;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(4);
     expect(imports.map(i => i.source)).toEqual([
       "react",
@@ -113,45 +113,45 @@ const fs = require('fs');
     ]);
   });
 
-  test("tracks line numbers", () => {
+  test("tracks line numbers", async () => {
     const code = `import a from 'a';
 import b from './b';
 import c from '../c';`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports[0].line).toBe(1);
     expect(imports[1].line).toBe(2);
     expect(imports[2].line).toBe(3);
   });
 
-  test("ignores imports in comments", () => {
+  test("ignores imports in comments", async () => {
     const code = `
 // import { foo } from './foo';
 /* import { bar } from './bar'; */
 import { real } from './real';
     `;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./real");
   });
 
-  test("handles double quotes", () => {
+  test("handles double quotes", async () => {
     const code = `import { foo } from "./foo";`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./foo");
   });
 
-  test("handles imports with .js extension", () => {
+  test("handles imports with .js extension", async () => {
     const code = `import { foo } from "./foo.js";`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./foo.js");
     expect(imports[0].isRelative).toBe(true);
   });
 
-  test("handles type imports", () => {
+  test("handles type imports", async () => {
     const code = `import type { Config } from "./config.js";`;
-    const imports = parseImports(code);
+    const imports = await parseImports(code);
     expect(imports).toHaveLength(1);
     expect(imports[0].source).toBe("./config.js");
   });

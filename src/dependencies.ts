@@ -5,6 +5,7 @@
 
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
+import { parseCode, type SyntaxNode } from "./ast";
 
 /**
  * Parsed import information
@@ -64,10 +65,130 @@ const INDEX_FILES = [
 ];
 
 /**
- * Parse imports from source code using regex patterns
- * Handles ES6 imports, CommonJS requires, and dynamic imports
+ * Extract string value from a string node, removing quotes
  */
-export function parseImports(content: string): ParsedImport[] {
+function extractStringValue(node: SyntaxNode): string | null {
+  // Find the string_fragment child which contains the actual text
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child && child.type === "string_fragment") {
+      return child.text;
+    }
+  }
+  // Fallback: strip quotes manually if no string_fragment found
+  const text = node.text;
+  if ((text.startsWith('"') && text.endsWith('"')) ||
+      (text.startsWith("'") && text.endsWith("'"))) {
+    return text.slice(1, -1);
+  }
+  return null;
+}
+
+/**
+ * Extract imports from AST by traversing nodes
+ */
+function extractImportsFromAST(rootNode: SyntaxNode): ParsedImport[] {
+  const imports: ParsedImport[] = [];
+
+  function traverse(node: SyntaxNode) {
+    // Handle import_statement (ES6 imports)
+    if (node.type === "import_statement") {
+      // Find the string node containing the source
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type === "string") {
+          const source = extractStringValue(child);
+          if (source) {
+            imports.push({
+              source,
+              isRelative: source.startsWith('./') || source.startsWith('../'),
+              line: node.startPosition.row + 1,
+            });
+          }
+          break;
+        }
+      }
+    }
+    // Handle export_statement with from clause
+    else if (node.type === "export_statement") {
+      // Check if it has a "from" keyword (re-export)
+      let hasFrom = false;
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type === "from") {
+          hasFrom = true;
+          break;
+        }
+      }
+
+      if (hasFrom) {
+        // Find the string node
+        for (let i = 0; i < node.childCount; i++) {
+          const child = node.child(i);
+          if (child && child.type === "string") {
+            const source = extractStringValue(child);
+            if (source) {
+              imports.push({
+                source,
+                isRelative: source.startsWith('./') || source.startsWith('../'),
+                line: node.startPosition.row + 1,
+              });
+            }
+            break;
+          }
+        }
+      }
+    }
+    // Handle call_expression (require() or dynamic import())
+    else if (node.type === "call_expression") {
+      // Check if it's require() or import()
+      const firstChild = node.child(0);
+      if (firstChild) {
+        const isRequire = firstChild.type === "identifier" && firstChild.text === "require";
+        const isDynamicImport = firstChild.type === "import";
+
+        if (isRequire || isDynamicImport) {
+          // Find the arguments node
+          for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i);
+            if (child && child.type === "arguments") {
+              // Find the string argument
+              for (let j = 0; j < child.childCount; j++) {
+                const arg = child.child(j);
+                if (arg && arg.type === "string") {
+                  const source = extractStringValue(arg);
+                  if (source) {
+                    imports.push({
+                      source,
+                      isRelative: source.startsWith('./') || source.startsWith('../'),
+                      line: node.startPosition.row + 1,
+                    });
+                  }
+                  break;
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    // Recursively traverse children
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child) traverse(child);
+    }
+  }
+
+  traverse(rootNode);
+  return imports;
+}
+
+/**
+ * Fallback regex-based parsing for when AST parsing fails or is not supported
+ */
+function parseImportsRegex(content: string): ParsedImport[] {
   const imports: ParsedImport[] = [];
   const lines = content.split('\n');
 
@@ -111,6 +232,29 @@ export function parseImports(content: string): ParsedImport[] {
   }
 
   return imports;
+}
+
+/**
+ * Parse imports from source code using AST-based parsing
+ * Handles ES6 imports, CommonJS requires, and dynamic imports
+ * Falls back to regex-based parsing if AST parsing fails
+ */
+export async function parseImports(content: string, ext?: string): Promise<ParsedImport[]> {
+  // Determine file extension for AST parsing
+  const fileExt = ext || '.ts'; // Default to TypeScript
+
+  // Try AST-based parsing first
+  try {
+    const tree = await parseCode(content, fileExt);
+    if (tree) {
+      return extractImportsFromAST(tree.rootNode);
+    }
+  } catch (error) {
+    // AST parsing failed, fall back to regex
+  }
+
+  // Fall back to regex-based parsing
+  return parseImportsRegex(content);
 }
 
 /**
@@ -207,7 +351,8 @@ export async function extractDependencies(
 
   try {
     const content = await fs.readFile(filePath, 'utf8');
-    const imports = parseImports(content);
+    const ext = path.extname(filePath);
+    const imports = await parseImports(content, ext);
 
     for (const imp of imports) {
       if (imp.isRelative) {
