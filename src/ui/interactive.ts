@@ -199,6 +199,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const [previewScroll, setPreviewScroll] = useState<number>(0);
   const [previewFocused, setPreviewFocused] = useState<boolean>(false);
   const [previewContent, setPreviewContent] = useState<string>('');
+  const [previewFilePath, setPreviewFilePath] = useState<string>('');
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
 
   // OPTIMIZATION #6: Memoize flattened nodes
@@ -265,50 +266,67 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   }, [files, selected]);
 
   // OPTIMIZATION #2, #3, #4: Async, Debounced, Partial File Reading
-  useEffect(() => {
-    if (!showPreview) return;
-
+  // Compute target file path without triggering state updates
+  const targetFilePath = useMemo(() => {
+    if (!showPreview) return '';
     const node = flatNodes[cursor];
-    if (!node || node.isFolder) {
-      setPreviewContent('');
-      return;
-    }
-
+    if (!node || node.isFolder) return '';
     const fileIdx = node.fileIndices[0];
-    const filePath = files[fileIdx].path;
+    return files[fileIdx]?.path || '';
+  }, [showPreview, flatNodes, cursor, files]);
 
-    if (fileContentCache.has(filePath)) {
-      setPreviewContent(fileContentCache.get(filePath)!);
+  useEffect(() => {
+    if (!targetFilePath) {
+      // Only update if we were showing something before
+      if (previewFilePath) {
+        setPreviewContent('');
+        setPreviewFilePath('');
+      }
       return;
     }
 
-    // OPTIMIZATION #3: Debounce to prevent thrashing when scrolling quickly
+    // Skip if we're already showing this file
+    if (targetFilePath === previewFilePath) {
+      return;
+    }
+
+    // Check cache first - update immediately without debounce
+    if (fileContentCache.has(targetFilePath)) {
+      setPreviewContent(fileContentCache.get(targetFilePath)!);
+      setPreviewFilePath(targetFilePath);
+      return;
+    }
+
+    // Show loading state immediately for uncached files
+    setIsLoadingPreview(true);
+
+    // Debounce the actual file read
     const timer = setTimeout(async () => {
-      setIsLoadingPreview(true);
       try {
-        const handle = await fs.open(filePath, 'r');
+        const handle = await fs.open(targetFilePath, 'r');
         try {
-          // OPTIMIZATION #4: Only read first N bytes
           const buffer = Buffer.alloc(MAX_PREVIEW_BYTES);
           const { bytesRead } = await handle.read(buffer, 0, MAX_PREVIEW_BYTES, 0);
           let content = buffer.toString('utf8', 0, bytesRead);
           if (bytesRead === MAX_PREVIEW_BYTES) {
             content += '\n... (preview truncated) ...';
           }
-          fileContentCache.set(filePath, content);
+          fileContentCache.set(targetFilePath, content);
           setPreviewContent(content);
+          setPreviewFilePath(targetFilePath);
         } finally {
           await handle.close();
         }
       } catch (err) {
         setPreviewContent(`[Error reading file: ${err}]`);
+        setPreviewFilePath(targetFilePath);
       } finally {
         setIsLoadingPreview(false);
       }
-    }, 100); // 100ms debounce
+    }, 100);
 
     return () => clearTimeout(timer);
-  }, [cursor, flatNodes, showPreview, files]);
+  }, [targetFilePath, previewFilePath]);
 
   // OPTIMIZATION #10: Memoize layout calculations (line splitting)
   const { rawPreviewLines, previewTotalLines } = useMemo(() => {
