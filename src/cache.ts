@@ -6,6 +6,7 @@
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import * as crypto from "node:crypto";
+import { verbose } from "./logger.js";
 
 // Cache directory name
 const CACHE_DIR = ".packx_cache";
@@ -87,8 +88,9 @@ export class CacheManager {
         // Version mismatch - start fresh
         this.data = { version: CACHE_VERSION, entries: {} };
       }
-    } catch {
+    } catch (err) {
       // File doesn't exist or invalid - start fresh
+      verbose(`Failed to load cache file, starting fresh`, { cacheFile: this.cacheFile, error: err instanceof Error ? err.message : String(err) });
       this.data = { version: CACHE_VERSION, entries: {} };
     }
   }
@@ -105,7 +107,7 @@ export class CacheManager {
       this.dirty = false;
     } catch (err) {
       // Cache save failure is non-fatal - just log and continue
-      console.error("Warning: Failed to save cache:", err);
+      verbose("Failed to save cache file", { cacheFile: this.cacheFile, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -149,8 +151,9 @@ export class CacheManager {
 
       // Content actually changed
       return null;
-    } catch {
+    } catch (err) {
       // File doesn't exist or can't be read
+      verbose(`Failed to validate cache entry for file`, { filePath: absPath, error: err instanceof Error ? err.message : String(err) });
       return null;
     }
   }
@@ -181,8 +184,9 @@ export class CacheManager {
       };
 
       this.dirty = true;
-    } catch {
+    } catch (err) {
       // File doesn't exist - don't cache
+      verbose(`Failed to set cache entry for file`, { filePath: absPath, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -229,7 +233,8 @@ export class CacheManager {
       const absPath = path.join(this.rootDir, relKey);
       try {
         await fs.access(absPath);
-      } catch {
+      } catch (err) {
+        verbose(`Pruning stale cache entry for non-existent file`, { filePath: relKey, error: err instanceof Error ? err.message : String(err) });
         delete this.data.entries[relKey];
         pruned++;
       }

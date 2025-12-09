@@ -6,6 +6,7 @@
 import { spawn } from "node:child_process";
 import * as readline from "node:readline";
 import * as path from "node:path";
+import { verbose } from "./logger.js";
 
 /**
  * Execute a git command and return stdout as array of lines
@@ -58,7 +59,8 @@ export async function isGitRepository(cwd?: string): Promise<boolean> {
   try {
     await execGit(["rev-parse", "--is-inside-work-tree"], cwd);
     return true;
-  } catch {
+  } catch (err) {
+    verbose(`Not a git repository: ${cwd || process.cwd()}`, { error: err instanceof Error ? err.message : String(err) });
     return false;
   }
 }
@@ -75,15 +77,18 @@ export async function getMainBranch(cwd?: string): Promise<string> {
     if (lines.length > 0) {
       return lines[0].replace(/^origin\//, "");
     }
-  } catch {
+  } catch (err) {
+    verbose(`Failed to get symbolic-ref for origin/HEAD`, { error: err instanceof Error ? err.message : String(err) });
     try {
       await execGit(["rev-parse", "--verify", "main"], cwd);
       return "main";
-    } catch {
+    } catch (err2) {
+      verbose(`Branch 'main' does not exist`, { error: err2 instanceof Error ? err2.message : String(err2) });
       try {
         await execGit(["rev-parse", "--verify", "master"], cwd);
         return "master";
-      } catch {
+      } catch (err3) {
+        verbose(`Branch 'master' does not exist, defaulting to 'main'`, { error: err3 instanceof Error ? err3.message : String(err3) });
         return "main";
       }
     }
@@ -133,7 +138,8 @@ export async function getGitDiffFiles(
   try {
     const lines = await execGit(["merge-base", branch, "HEAD"], cwd);
     mergeBase = lines[0];
-  } catch {
+  } catch (err) {
+    verbose(`Failed to find merge-base for ${branch}, using branch directly`, { error: err instanceof Error ? err.message : String(err) });
     mergeBase = branch;
   }
 

@@ -23,6 +23,7 @@ import { treeCheckbox, type FileChoice } from "./ui/interactive.js";
 import { Packer } from "./packer.js";
 import { startWatcher } from "./watcher.js";
 import { runExplainMode } from "./explainer.js";
+import { setVerbose, error as logError } from "./logger.js";
 
 const VERSION = "4.0.0";
 
@@ -179,6 +180,9 @@ async function main() {
 
   // Resolve configuration
   const { options, parsed, shouldExit } = await resolveConfig(process.argv.slice(2));
+
+  // Initialize logger with verbose flag
+  setVerbose(options.verbose);
 
   // Handle early exits
   if (shouldExit === 'help') {
@@ -478,6 +482,7 @@ async function handleOutput(
 }
 
 main().catch((err) => {
-  console.error("Unexpected error:", err);
+  logError("Unexpected error during execution", err);
+  console.error("\nAn unexpected error occurred. Run with --verbose for detailed error information.");
   process.exit(99);
 });

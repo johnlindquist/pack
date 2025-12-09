@@ -67,6 +67,7 @@ export type Argv = {
   watch?: boolean;                 // -w (watch mode)
   w?: boolean;                     // alias
   explain?: boolean;               // --explain
+  verbose?: boolean;               // --verbose
   help?: boolean;                  // -h
   h?: boolean;                     // alias
   version?: boolean;               // -v
@@ -265,6 +266,9 @@ export type PackerOptions = {
 
   // Explain mode (dry run with detailed logging)
   explainMode: boolean;
+
+  // Verbose mode (detailed error logging)
+  verbose: boolean;
 };
 
 // ============================================================================

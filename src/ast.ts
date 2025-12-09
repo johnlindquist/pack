@@ -6,6 +6,7 @@
 import { Parser, Language, type Tree, type SyntaxNode } from "web-tree-sitter";
 import { join } from "path";
 import { existsSync } from "fs";
+import { verbose } from "./logger.js";
 
 // Find WASM directory - works in both src and dist contexts
 function findWasmDir(): string {
@@ -88,7 +89,8 @@ async function loadLanguage(wasmFile: string): Promise<Language | null> {
     const language = await Language.load(wasmPath);
     languageCache.set(wasmFile, language);
     return language;
-  } catch {
+  } catch (err) {
+    verbose(`Failed to load tree-sitter language WASM`, { wasmFile, wasmDir, error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }
@@ -125,7 +127,8 @@ export async function parseCode(content: string, ext: string): Promise<Tree | nu
 
     p.setLanguage(language);
     return p.parse(content);
-  } catch {
+  } catch (err) {
+    verbose(`Failed to parse code with tree-sitter`, { ext, error: err instanceof Error ? err.message : String(err) });
     return null;
   }
 }

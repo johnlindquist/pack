@@ -471,6 +471,7 @@ export async function resolveConfig(argv: string[]): Promise<{
     maxTokens: maxTokens && typeof maxTokens === 'number' && !isNaN(maxTokens) ? maxTokens : undefined,
     noCache: Boolean(parsed["no-cache"]),  // yargs parses --no-cache as a separate boolean
     explainMode: Boolean(parsed.explain),
+    verbose: Boolean(parsed.verbose),
   };
 
   return { options, parsed, shouldExit: null };
@@ -509,5 +510,6 @@ function createDefaultOptions(): PackerOptions {
     useRipgrep: 'auto',
     noCache: false,
     explainMode: false,
+    verbose: false,
   };
 }

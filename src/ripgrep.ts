@@ -8,6 +8,7 @@ import { promises as fs } from "node:fs";
 import * as readline from "node:readline";
 import * as path from "node:path";
 import { DEFAULT_IGNORE_PATTERNS } from "./scanner.js";
+import { verbose } from "./logger.js";
 
 export type RipgrepSearchOptions = {
   /** Root directory to search in */
@@ -216,6 +217,7 @@ export async function ripgrepSearch(
 
     proc.on("error", (err) => {
       rl.close();
+      verbose(`Failed to spawn ripgrep process`, { error: err.message, root: options.root });
       resolve({
         files: [],
         usedRipgrep: false,
@@ -227,10 +229,12 @@ export async function ripgrepSearch(
       rl.close();
       // ripgrep returns 0 for matches, 1 for no matches, 2 for errors
       if (code === 2) {
+        const errorMsg = stderr.trim() || "ripgrep returned an error";
+        verbose(`Ripgrep exited with error code 2`, { error: errorMsg, root: options.root });
         resolve({
           files: [],
           usedRipgrep: true,
-          error: stderr.trim() || "ripgrep returned an error",
+          error: errorMsg,
         });
         return;
       }
@@ -338,9 +342,10 @@ export async function ripgrepExcludeContent(
       }
     });
 
-    proc.on("error", () => {
+    proc.on("error", (err) => {
       rl.close();
       // On error, return all files (can't filter)
+      verbose(`Failed to run ripgrep for exclude content filtering`, { error: err.message });
       resolve(files);
     });
 

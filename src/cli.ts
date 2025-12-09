@@ -222,6 +222,11 @@ export function parseArgs(args: string[]): Argv {
       description: 'Dry run with detailed logging (no output generated)',
       group: 'Other:',
     })
+    .option('verbose', {
+      type: 'boolean',
+      description: 'Enable verbose error logging for debugging',
+      group: 'Other:',
+    })
     .option('help', {
       alias: 'h',
       type: 'boolean',
@@ -321,6 +326,7 @@ export function printHelp(): void {
       --config <file>      Load config file
       --no-cache           Disable caching (force fresh analysis)
       --explain            Dry run with detailed logging (no output generated)
+      --verbose            Enable verbose error logging for debugging
   -h, --help               Show this help
   -v, --version            Show version
 `;

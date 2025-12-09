@@ -9,6 +9,7 @@ import { Minimatch } from "minimatch";
 import ignore, { type Ignore } from "ignore";
 import pLimit from "p-limit";
 import { isBinaryFile } from "./analysis.js";
+import { verbose } from "./logger.js";
 
 const CONCURRENCY_LIMIT = 50;
 
@@ -56,8 +57,9 @@ export async function loadGitignore(dir: string): Promise<Ignore> {
     try {
       await fs.access(gitignorePath);
       gitignoreFiles.unshift(gitignorePath); // Add to front (parent rules first)
-    } catch {
+    } catch (err) {
       // No .gitignore at this level
+      verbose(`No .gitignore found at ${gitignorePath}`, { error: err instanceof Error ? err.message : String(err) });
     }
 
     // Check if we've reached the repo root or filesystem root
@@ -78,8 +80,9 @@ export async function loadGitignore(dir: string): Promise<Ignore> {
     try {
       const content = await fs.readFile(gitignorePath, 'utf8');
       ig.add(content);
-    } catch {
+    } catch (err) {
       // Ignore read errors
+      verbose(`Failed to read .gitignore file: ${gitignorePath}`, { error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -192,7 +195,8 @@ export async function filterByContent(
           }
 
           return null;
-        } catch {
+        } catch (err) {
+          verbose(`Failed to read file for content filtering: ${file}`, { error: err instanceof Error ? err.message : String(err) });
           return null;
         }
       })
@@ -311,13 +315,15 @@ export async function findRelatedFiles(
           if (stat.isFile()) {
             related.push(entryPath);
           }
-        } catch {
+        } catch (err) {
           // Skip if can't stat
+          verbose(`Failed to stat potential related file: ${entryPath}`, { error: err instanceof Error ? err.message : String(err) });
         }
       }
     }
-  } catch {
+  } catch (err) {
     // Directory read failed
+    verbose(`Failed to read directory for related files: ${dir}`, { error: err instanceof Error ? err.message : String(err) });
   }
 
   return related;

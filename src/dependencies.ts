@@ -5,7 +5,8 @@
 
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { parseCode, type SyntaxNode } from "./ast";
+import { parseCode, type SyntaxNode } from "./ast.js";
+import { verbose } from "./logger.js";
 
 /**
  * Parsed import information
@@ -312,8 +313,9 @@ export async function resolveImportPath(
       if (stat.isFile()) {
         return candidate;
       }
-    } catch {
+    } catch (err) {
       // File doesn't exist, try next
+      verbose(`Import resolution: extension mapping not found`, { candidate, fromFile, error: err instanceof Error ? err.message : String(err) });
     }
   }
 
@@ -328,15 +330,18 @@ export async function resolveImportPath(
           if (indexStat.isFile()) {
             return indexPath;
           }
-        } catch {
+        } catch (err) {
           // Index file doesn't exist, try next
+          verbose(`Import resolution: index file not found`, { indexPath, fromFile, error: err instanceof Error ? err.message : String(err) });
         }
       }
     }
-  } catch {
+  } catch (err) {
     // Not a directory
+    verbose(`Import resolution: path is not a directory`, { basePath, fromFile, error: err instanceof Error ? err.message : String(err) });
   }
 
+  verbose(`Import resolution failed for relative import`, { importPath, fromFile });
   return null;
 }
 
@@ -366,8 +371,9 @@ export async function extractDependencies(
         }
       }
     }
-  } catch {
+  } catch (err) {
     // File read error, skip
+    verbose(`Failed to extract dependencies from file`, { filePath, error: err instanceof Error ? err.message : String(err) });
   }
 
   return resolved;
