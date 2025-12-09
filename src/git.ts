@@ -4,6 +4,7 @@
  */
 
 import { spawn } from "node:child_process";
+import * as readline from "node:readline";
 import * as path from "node:path";
 
 /**
@@ -16,26 +17,37 @@ async function execGit(args: string[], cwd?: string): Promise<string[]> {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    let stdout = "";
+    const lines: string[] = [];
     let stderr = "";
 
-    proc.stdout.on("data", (data) => (stdout += data.toString()));
-    proc.stderr.on("data", (data) => (stderr += data.toString()));
+    // Stream stdout line-by-line to prevent memory exhaustion
+    const rl = readline.createInterface({
+      input: proc.stdout,
+      crlfDelay: Infinity,
+    });
 
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`git ${args.join(" ")} failed: ${stderr}`));
-      } else {
-        resolve(
-          stdout
-            .split("\n")
-            .map((l) => l.trim())
-            .filter(Boolean)
-        );
+    rl.on("line", (line) => {
+      const trimmed = line.trim();
+      if (trimmed) {
+        lines.push(trimmed);
       }
     });
 
-    proc.on("error", reject);
+    proc.stderr.on("data", (data) => (stderr += data.toString()));
+
+    proc.on("close", (code) => {
+      rl.close();
+      if (code !== 0) {
+        reject(new Error(`git ${args.join(" ")} failed: ${stderr}`));
+      } else {
+        resolve(lines);
+      }
+    });
+
+    proc.on("error", (err) => {
+      rl.close();
+      reject(err);
+    });
   });
 }
 

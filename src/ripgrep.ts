@@ -4,6 +4,7 @@
  */
 
 import { spawn } from "node:child_process";
+import * as readline from "node:readline";
 import * as path from "node:path";
 import { DEFAULT_IGNORE_PATTERNS } from "./scanner.js";
 
@@ -179,11 +180,24 @@ export async function ripgrepSearch(
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    let stdout = "";
+    const files: string[] = [];
     let stderr = "";
 
-    proc.stdout?.on("data", (data) => {
-      stdout += data.toString();
+    // Stream stdout line-by-line to prevent memory exhaustion
+    const rl = readline.createInterface({
+      input: proc.stdout,
+      crlfDelay: Infinity,
+    });
+
+    rl.on("line", (line) => {
+      const trimmed = line.trim();
+      if (trimmed) {
+        // Ensure absolute paths
+        const file = path.isAbsolute(trimmed)
+          ? trimmed
+          : path.resolve(options.root, trimmed);
+        files.push(file);
+      }
     });
 
     proc.stderr?.on("data", (data) => {
@@ -191,6 +205,7 @@ export async function ripgrepSearch(
     });
 
     proc.on("error", (err) => {
+      rl.close();
       resolve({
         files: [],
         usedRipgrep: false,
@@ -199,6 +214,7 @@ export async function ripgrepSearch(
     });
 
     proc.on("close", (code) => {
+      rl.close();
       // ripgrep returns 0 for matches, 1 for no matches, 2 for errors
       if (code === 2) {
         resolve({
@@ -208,19 +224,6 @@ export async function ripgrepSearch(
         });
         return;
       }
-
-      // Parse output: one file path per line
-      const files = stdout
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((file) => {
-          // Ensure absolute paths
-          if (path.isAbsolute(file)) {
-            return file;
-          }
-          return path.resolve(options.root, file);
-        });
 
       resolve({
         files,
@@ -301,26 +304,29 @@ export async function ripgrepExcludeContent(
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    let stdout = "";
+    const matchedFiles = new Set<string>();
 
-    proc.stdout?.on("data", (data) => {
-      stdout += data.toString();
+    // Stream stdout line-by-line to prevent memory exhaustion
+    const rl = readline.createInterface({
+      input: proc.stdout,
+      crlfDelay: Infinity,
+    });
+
+    rl.on("line", (line) => {
+      const trimmed = line.trim();
+      if (trimmed) {
+        matchedFiles.add(trimmed);
+      }
     });
 
     proc.on("error", () => {
+      rl.close();
       // On error, return all files (can't filter)
       resolve(files);
     });
 
     proc.on("close", () => {
-      // Files that matched the exclude pattern should be removed
-      const matchedFiles = new Set(
-        stdout
-          .split("\n")
-          .map((line) => line.trim())
-          .filter(Boolean)
-      );
-
+      rl.close();
       // Return files that did NOT match the exclude pattern
       const filtered = files.filter((f) => !matchedFiles.has(f));
       resolve(filtered);
