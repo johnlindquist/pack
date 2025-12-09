@@ -10,7 +10,7 @@ import * as crypto from "node:crypto";
 // Cache directory name
 const CACHE_DIR = ".packx_cache";
 const CACHE_FILE = "cache.json";
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2;
 
 /**
  * Cached data for a single file
@@ -31,13 +31,14 @@ export type FileCacheEntry = {
  */
 export type CacheData = {
   version: number;
-  entries: Record<string, FileCacheEntry>;  // Key is absolute file path
+  entries: Record<string, FileCacheEntry>;  // Key is relative POSIX file path
 };
 
 /**
  * Cache manager class
  */
 export class CacheManager {
+  private rootDir: string;
   private cacheDir: string;
   private cacheFile: string;
   private data: CacheData;
@@ -45,10 +46,21 @@ export class CacheManager {
   private enabled: boolean = true;
 
   constructor(rootDir: string = process.cwd(), enabled: boolean = true) {
-    this.cacheDir = path.join(rootDir, CACHE_DIR);
+    this.rootDir = path.resolve(rootDir);
+    this.cacheDir = path.join(this.rootDir, CACHE_DIR);
     this.cacheFile = path.join(this.cacheDir, CACHE_FILE);
     this.enabled = enabled;
     this.data = { version: CACHE_VERSION, entries: {} };
+  }
+
+  /**
+   * Convert absolute file path to relative POSIX path for cache key
+   */
+  private toRelativeKey(filePath: string): string {
+    const absPath = path.resolve(filePath);
+    const relPath = path.relative(this.rootDir, absPath);
+    // Convert to POSIX format for cross-platform compatibility
+    return relPath.split(path.sep).join("/");
   }
 
   /**
@@ -103,8 +115,9 @@ export class CacheManager {
   async get(filePath: string): Promise<FileCacheEntry | null> {
     if (!this.enabled) return null;
 
+    const relKey = this.toRelativeKey(filePath);
     const absPath = path.resolve(filePath);
-    const entry = this.data.entries[absPath];
+    const entry = this.data.entries[relKey];
 
     if (!entry) return null;
 
@@ -152,13 +165,14 @@ export class CacheManager {
   ): Promise<void> {
     if (!this.enabled) return;
 
+    const relKey = this.toRelativeKey(filePath);
     const absPath = path.resolve(filePath);
 
     try {
       const stat = await fs.stat(absPath);
       const contentBuffer = typeof content === "string" ? Buffer.from(content) : content;
 
-      this.data.entries[absPath] = {
+      this.data.entries[relKey] = {
         mtime: Math.floor(stat.mtimeMs),
         size: stat.size,
         contentHash: computeHash(contentBuffer),
@@ -176,9 +190,9 @@ export class CacheManager {
    * Invalidate a specific file's cache entry
    */
   invalidate(filePath: string): void {
-    const absPath = path.resolve(filePath);
-    if (this.data.entries[absPath]) {
-      delete this.data.entries[absPath];
+    const relKey = this.toRelativeKey(filePath);
+    if (this.data.entries[relKey]) {
+      delete this.data.entries[relKey];
       this.dirty = true;
     }
   }
@@ -210,11 +224,13 @@ export class CacheManager {
     const entries = Object.keys(this.data.entries);
     let pruned = 0;
 
-    for (const filePath of entries) {
+    for (const relKey of entries) {
+      // Convert relative key back to absolute path for file access check
+      const absPath = path.join(this.rootDir, relKey);
       try {
-        await fs.access(filePath);
+        await fs.access(absPath);
       } catch {
-        delete this.data.entries[filePath];
+        delete this.data.entries[relKey];
         pruned++;
       }
     }
