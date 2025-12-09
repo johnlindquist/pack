@@ -1,3 +1,10 @@
+# [4.6.0](https://github.com/johnlindquist/pack/compare/v4.5.0...v4.6.0) (2025-12-09)
+
+
+### Features
+
+* enhance interactive filter with cursor navigation and glob support ([35fa691](https://github.com/johnlindquist/pack/commit/35fa6911fefd7ed5a80266c6c2ec38f120655f97))
+
 # [4.5.0](https://github.com/johnlindquist/pack/compare/v4.4.0...v4.5.0) (2025-12-09)
 
 
