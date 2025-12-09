@@ -1,3 +1,10 @@
+# [4.5.0](https://github.com/johnlindquist/pack/compare/v4.4.0...v4.5.0) (2025-12-09)
+
+
+### Features
+
+* replace INI config with .packignore-focused workflow ([208c164](https://github.com/johnlindquist/pack/commit/208c164646546a70df8dead6513de2d831039ff7))
+
 # [4.4.0](https://github.com/johnlindquist/pack/compare/v4.3.0...v4.4.0) (2025-12-09)
 
 
