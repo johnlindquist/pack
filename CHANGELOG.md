@@ -1,3 +1,10 @@
+# [4.7.0](https://github.com/johnlindquist/pack/compare/v4.6.2...v4.7.0) (2025-12-10)
+
+
+### Features
+
+* make interactive mode the default ([d47c53a](https://github.com/johnlindquist/pack/commit/d47c53ae8e54eb409054b5c95782529aac19ee3d))
+
 ## [4.6.2](https://github.com/johnlindquist/pack/compare/v4.6.1...v4.6.2) (2025-12-09)
 
 
