@@ -1,3 +1,10 @@
+# [4.8.0](https://github.com/johnlindquist/pack/compare/v4.7.1...v4.8.0) (2025-12-10)
+
+
+### Features
+
+* add named bundles for saving/loading file contexts ([d3b1054](https://github.com/johnlindquist/pack/commit/d3b1054e545111a852efcfa08383de2151de5ea0))
+
 ## [4.7.1](https://github.com/johnlindquist/pack/compare/v4.7.0...v4.7.1) (2025-12-10)
 
 
