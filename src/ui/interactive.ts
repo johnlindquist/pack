@@ -173,7 +173,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     previewWidth: configPreviewWidth,
     searchPattern = null,
     contextLines,
-    packignoreIndices = new Set<number>()
+    packignoreIndices = new Set<number>(),
+    initialSelectedIndices
   } = config;
 
   // OPTIMIZATION #1: Memoize tree construction (static for the prompt lifetime)
@@ -185,6 +186,11 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
   // Initialize selection once
   const [selected, setSelected] = useState<Set<number>>(() => {
+    // 1. If explicit initial selection provided (e.g., from a bundle), use it exactly
+    if (initialSelectedIndices && initialSelectedIndices.size > 0) {
+      return new Set(initialSelectedIndices);
+    }
+    // 2. Otherwise default to "Select All minus .packignore"
     return new Set<number>(
       files.map((_, i) => i).filter(i => !packignoreIndices.has(i))
     );
@@ -504,6 +510,10 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     } else if (showPreview && previewFocused) {
       const previewHeight = Math.min(pageSize, 15);
       const totalLines = previewTotalLines;
+
+      // DEBUG: Log key info when preview is focused
+      const fs = require('fs');
+      fs.appendFileSync('/tmp/pack-keys.log', `[${new Date().toISOString()}] key: ${JSON.stringify(key)}\n`);
 
       if (key.name === 'pageup' || (key.ctrl && key.name === 'u')) {
         setPreviewScroll(Math.max(0, previewScroll - previewHeight));

@@ -23,6 +23,7 @@ import { Packer } from "./packer.js";
 import { startWatcher } from "./watcher.js";
 import { runExplainMode } from "./explainer.js";
 import { setVerbose, error as logError } from "./logger.js";
+import { loadBundles, calculateBundleStats, getBundleFileIndices, saveBundle } from "./bundles.js";
 
 const VERSION = "4.0.0";
 
@@ -175,9 +176,54 @@ async function main() {
         ext: r.ext,
       }));
 
+      // ---------------------------------------------------------
+      // Bundle Selection Dashboard
+      // ---------------------------------------------------------
+      const bundles = await loadBundles(process.cwd());
+      let initialSelectedIndices: Set<number> | undefined;
+      let activeBundleName: string | null = null;
+
+      if (bundles.length > 0) {
+        // Calculate stats for bundles against current file candidates
+        const stats = calculateBundleStats(bundles, fileChoices);
+        const validBundles = stats.filter(s => s.matchCount > 0);
+
+        const totalTokens = analysisResults.reduce((sum, f) => sum + f.tokens, 0);
+
+        if (validBundles.length > 0) {
+          const selection = await select({
+            message: 'Choose starting point:',
+            choices: [
+              {
+                name: `🆕 Start from Scratch (All ${analysisResults.length} files, ${formatTokenCount(totalTokens)})`,
+                value: 'scratch',
+              },
+              ...validBundles.map(b => {
+                const bundle = bundles.find(bn => bn.name === b.name)!;
+                return {
+                  name: `📦 ${b.name} (${b.matchCount} files, ${formatTokenCount(b.tokenCount)})`,
+                  value: b.name,
+                };
+              })
+            ]
+          });
+
+          if (selection !== 'scratch') {
+            const selectedBundle = bundles.find(b => b.name === selection);
+            if (selectedBundle) {
+              initialSelectedIndices = getBundleFileIndices(selectedBundle, fileChoices);
+              activeBundleName = selectedBundle.name;
+              log(`\n✅ Loaded bundle "${selectedBundle.name}" (${initialSelectedIndices.size} files selected)`);
+            }
+          }
+        }
+      }
+      // ---------------------------------------------------------
+
       // Load packignore patterns to determine which files start unselected
+      // Only apply packignore if no bundle was selected
       const packignoreIndices = new Set<number>();
-      if (options.usePackignore) {
+      if (options.usePackignore && !initialSelectedIndices) {
         const packignore = await loadPackignore(options.roots[0] || '.');
         for (let i = 0; i < fileChoices.length; i++) {
           if (packignore.ignores(fileChoices[i].relPath)) {
@@ -193,13 +239,14 @@ async function main() {
       const searchPattern = packer.getPattern();
 
       const result = await treeCheckbox({
-        message: "Select files to bundle:",
+        message: activeBundleName ? `Refine bundle "${activeBundleName}":` : "Select files to bundle:",
         files: fileChoices,
         pageSize: 20,
         showPreview: true,
         searchPattern,
         contextLines: options.contextLines,
         packignoreIndices,
+        initialSelectedIndices,
       });
 
       const selected = result.selectedPaths;
@@ -268,15 +315,40 @@ async function main() {
       }
 
       // Ask for output destination
-      const outputChoice = await select({
+      let outputChoice = await select({
         message: 'Output destination:',
         choices: [
           { name: '📋 Copy to clipboard', value: 'clipboard' },
           { name: '📄 Write to file', value: 'file' },
+          { name: '💾 Save selection as Bundle', value: 'save_bundle' },
           { name: '🖥️  Print to stdout', value: 'stdout' },
           { name: '⏭️  Skip output', value: 'skip' },
         ],
       });
+
+      // Handle Save Bundle workflow
+      if (outputChoice === 'save_bundle') {
+        const bundleName = await input({
+          message: 'Bundle Name:',
+          validate: (v) => v.length > 0 ? true : "Name required"
+        });
+        const cwd = process.cwd();
+        const relativePaths = selected.map(p => path.relative(cwd, p));
+
+        const savedPath = await saveBundle(cwd, bundleName, relativePaths);
+        log(`\n✅ Bundle saved to ${savedPath}`);
+
+        // Re-prompt for output after saving
+        outputChoice = await select({
+          message: 'Output destination:',
+          choices: [
+            { name: '📋 Copy to clipboard', value: 'clipboard' },
+            { name: '📄 Write to file', value: 'file' },
+            { name: '🖥️  Print to stdout', value: 'stdout' },
+            { name: '⏭️  Skip output', value: 'skip' },
+          ],
+        });
+      }
 
       if (outputChoice === 'skip') {
         log('\n✅ Selection complete. No output generated.');

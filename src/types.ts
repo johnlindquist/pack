@@ -202,6 +202,7 @@ export type TreeCheckboxConfig = {
   searchPattern?: RegExp | null;  // Pattern for context window highlighting
   contextLines?: number;  // Number of context lines around matches
   packignoreIndices?: Set<number>;  // File indices that match .packignore (start unselected)
+  initialSelectedIndices?: Set<number>;  // Explicit initial selection (e.g., from a bundle)
 };
 
 // ============================================================================
