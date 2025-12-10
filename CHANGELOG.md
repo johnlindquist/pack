@@ -1,3 +1,10 @@
+## [4.7.1](https://github.com/johnlindquist/pack/compare/v4.7.0...v4.7.1) (2025-12-10)
+
+
+### Bug Fixes
+
+* disable interactive mode when --stdout is used ([1bf2c81](https://github.com/johnlindquist/pack/commit/1bf2c81e1e0d3028f03eb749ba81b4caf6aba5ef))
+
 # [4.7.0](https://github.com/johnlindquist/pack/compare/v4.6.2...v4.7.0) (2025-12-10)
 
 
