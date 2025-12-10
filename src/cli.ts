@@ -182,7 +182,8 @@ export function parseArgs(args: string[]): Argv {
     .option('interactive', {
       alias: 'I',
       type: 'boolean',
-      description: 'Select files interactively with preview pane',
+      default: true,
+      description: 'Select files interactively with preview pane (default: true)',
       group: 'Interactive Mode:',
     })
 
@@ -309,7 +310,8 @@ export function printHelp(): void {
       --no-rg              Disable ripgrep, use Node.js glob instead
 
 \x1b[1mINTERACTIVE MODE\x1b[0m
-  -I, --interactive        Select files interactively with preview pane
+  -I, --interactive        Select files interactively with preview pane (default)
+      --no-interactive     Disable interactive mode for scripting/piping
                            • Tab to focus/unfocus preview
                            • PgUp/PgDn to scroll preview
                            • With -l, shows context windows around matches

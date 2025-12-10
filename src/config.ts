@@ -281,7 +281,7 @@ function createDefaultOptions(): PackerOptions {
     copyToClipboard: false,
     toStdout: false,
     previewOnly: false,
-    interactive: false,
+    interactive: true,
     watch: false,
     promptText: undefined,
     useRipgrep: 'auto',
