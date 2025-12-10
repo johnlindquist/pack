@@ -1,3 +1,10 @@
+## [4.8.1](https://github.com/johnlindquist/pack/compare/v4.8.0...v4.8.1) (2025-12-10)
+
+
+### Bug Fixes
+
+* dynamically resize interactive UI on terminal resize ([8b691e1](https://github.com/johnlindquist/pack/commit/8b691e16a7a1cdcc005290ce2bfb5a04cbcc6abf))
+
 # [4.8.0](https://github.com/johnlindquist/pack/compare/v4.7.1...v4.8.0) (2025-12-10)
 
 

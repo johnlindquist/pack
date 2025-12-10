@@ -1,6 +1,6 @@
 {
   "name": "packx",
-  "version": "4.8.0",
+  "version": "4.8.1",
   "description": "Smart file filter for AI consumption - search and bundle only files containing specific strings",
   "license": "MIT",
   "type": "module",
