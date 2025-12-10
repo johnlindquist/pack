@@ -150,7 +150,8 @@ async function main() {
   }
 
   // For interactive mode, we need to get candidates first
-  if (options.interactive && process.stdin.isTTY) {
+  // Disable interactive if --stdout is used (for piping)
+  if (options.interactive && process.stdin.isTTY && !options.toStdout) {
     // Use packer to discover files (but not process them yet)
     // Temporarily disable packignore to show all files (they'll start unselected)
     const tempPacker = new Packer({ ...options, interactive: false, usePackignore: false });
