@@ -1,3 +1,10 @@
+# [4.9.0](https://github.com/johnlindquist/pack/compare/v4.8.1...v4.9.0) (2025-12-10)
+
+
+### Features
+
+* add --bundle/-b flag to load bundles non-interactively ([c5e3332](https://github.com/johnlindquist/pack/commit/c5e3332078381dbd8e37aec4d656939b1cdeccf3))
+
 ## [4.8.1](https://github.com/johnlindquist/pack/compare/v4.8.0...v4.8.1) (2025-12-10)
 
 
