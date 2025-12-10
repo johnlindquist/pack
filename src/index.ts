@@ -141,6 +141,76 @@ async function main() {
   const packer = new Packer(options);
   const log = (msg: string) => (options.toStdout ? console.error(msg) : console.log(msg));
 
+  // Handle --bundle flag (non-interactive bundle loading)
+  const bundleName = parsed.bundle;
+  if (bundleName) {
+    const bundles = await loadBundles(process.cwd());
+
+    // Find the bundle - match by name (case-insensitive) or filename
+    const bundle = bundles.find(b =>
+      b.name.toLowerCase() === bundleName.toLowerCase() ||
+      path.basename(b.path, path.extname(b.path)).toLowerCase() === bundleName.toLowerCase()
+    );
+
+    if (!bundle) {
+      const availableBundles = bundles.map(b => `  - ${b.name}`).join('\n');
+      console.error(`❌ Bundle "${bundleName}" not found.`);
+      if (bundles.length > 0) {
+        console.error(`\nAvailable bundles:\n${availableBundles}`);
+      } else {
+        console.error(`\nNo bundles found in .pack/bundles/`);
+        console.error(`Create one with: packx -I (then save as bundle)`);
+      }
+      process.exit(1);
+    }
+
+    log(`📦 Loading bundle "${bundle.name}"...`);
+
+    // Use packer to discover all candidate files
+    const tempPacker = new Packer({ ...options, interactive: false, usePackignore: false });
+    const tempResult = await tempPacker.pack();
+
+    if (tempResult.matchedFiles.length === 0) {
+      console.error("⚠️  No files found matching criteria.");
+      process.exit(2);
+    }
+
+    // Analyze files for token info
+    const analysisResults = await packer.analyzeForInteractive(tempResult.matchedFiles);
+    const fileChoices = analysisResults.map(r => ({
+      path: r.path,
+      relPath: r.relPath,
+      tokens: r.tokens,
+      ext: r.ext,
+    }));
+
+    // Get files matching the bundle patterns
+    const bundleIndices = getBundleFileIndices(bundle, fileChoices);
+    const selectedFiles = fileChoices
+      .filter((_, i) => bundleIndices.has(i))
+      .map(f => f.path);
+
+    if (selectedFiles.length === 0) {
+      console.error(`⚠️  Bundle "${bundle.name}" matched no files in current context.`);
+      process.exit(2);
+    }
+
+    const selectedTokens = fileChoices
+      .filter((_, i) => bundleIndices.has(i))
+      .reduce((sum, f) => sum + f.tokens, 0);
+
+    log(`✅ Bundle loaded: ${selectedFiles.length} files, ${formatTokenCount(selectedTokens)} tokens`);
+
+    // Pack the selected files
+    const selectedOptions = { ...options, explicitFiles: selectedFiles, interactive: false };
+    const finalPacker = new Packer(selectedOptions);
+    const packResult = await finalPacker.pack();
+
+    // Handle output
+    await handleOutput(packResult, options, log);
+    process.exit(0);
+  }
+
   // Log git mode
   if (options.gitMode === 'staged') {
     log("🔍 Finding staged files...");

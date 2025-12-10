@@ -1,0 +1,45 @@
+# Pack exclusions - generated from interactive selection
+# 2025-12-10T07:21:35.039Z
+# Uses gitignore syntax
+
+src/ast-context.ts
+src/scanner.test.ts
+src/git.ts
+src/ripgrep.test.ts
+src/analysis.ts
+src/formatter.test.ts
+src/dependencies.test.ts
+src/core.ts
+src/token-splitting.test.ts
+src/context.test.ts
+src/logger.ts
+src/ast.test.ts
+src/transforms.test.ts
+src/analysis.test.ts
+src/utils.ts
+src/watcher.test.ts
+src/core.test.ts
+src/explainer.test.ts
+src/watcher.ts
+src/cache.test.ts
+src/e2e.test.ts
+src/processing.ts
+src/ui/interactive.test.ts
+tsconfig.json
+scripts/update-version.js
+package.json
+CHANGELOG.md
+test/e2e/basic.test.ts
+test/e2e/git-modes.test.ts
+test/e2e/helpers.ts
+test/fixtures/simple-project/src/config.ts
+test/fixtures/simple-project/src/utils.ts
+test/fixtures/simple-project/index.ts
+test/fixtures/simple-project/package.json
+test/fixtures/simple-project/README.md
+test/fixtures/git-project/src/processor.ts
+test/fixtures/git-project/src/helpers.ts
+test/fixtures/git-project/README.md
+test/fixtures/git-project/main.ts
+test/README.md
+PUBLISHING.md

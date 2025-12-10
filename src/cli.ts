@@ -187,6 +187,14 @@ export function parseArgs(args: string[]): Argv {
       group: 'Interactive Mode:',
     })
 
+    // Bundles
+    .option('bundle', {
+      alias: 'b',
+      type: 'string',
+      description: 'Load a saved bundle by name (from .pack/bundles/)',
+      group: 'Bundles:',
+    })
+
     // Watch mode
     .option('watch', {
       alias: 'w',
@@ -315,6 +323,10 @@ export function printHelp(): void {
                            • Tab to focus/unfocus preview
                            • PgUp/PgDn to scroll preview
                            • With -l, shows context windows around matches
+
+\x1b[1mBUNDLES\x1b[0m
+  -b, --bundle <name>      Load a saved bundle by name (from .pack/bundles/)
+                           Skips interactive mode and outputs directly
 
 \x1b[1mWATCH MODE\x1b[0m
   -w, --watch              Watch for file changes and auto-update output

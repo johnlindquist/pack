@@ -80,6 +80,9 @@ export type Argv = {
   // Packignore
   "no-packignore"?: boolean;       // --no-packignore
 
+  // Bundles
+  bundle?: string;                 // -b, --bundle (load a saved bundle by name)
+
   // Legacy mappings
   extensions?: string | string[];
   e?: string | string[];           // alias
