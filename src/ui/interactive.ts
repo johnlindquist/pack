@@ -25,10 +25,13 @@ const fileContentCache = new Map<string, string>();
 const MAX_PREVIEW_BYTES = 20 * 1024; // OPTIMIZATION #4: Limit preview read to 20KB
 
 /**
- * Get terminal width, defaulting to 80 if unavailable
+ * Get terminal dimensions, defaulting to 80x24 if unavailable
  */
-function getTerminalWidth(): number {
-  return process.stdout.columns || 80;
+function getTerminalDimensions(): { width: number; height: number } {
+  return {
+    width: process.stdout.columns || 80,
+    height: process.stdout.rows || 24
+  };
 }
 
 /**
@@ -207,6 +210,20 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const [previewContent, setPreviewContent] = useState<string>('');
   const [previewFilePath, setPreviewFilePath] = useState<string>('');
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
+
+  // Terminal dimensions (reactive to resize)
+  const [terminalSize, setTerminalSize] = useState(getTerminalDimensions);
+
+  // Listen for terminal resize events
+  useEffect(() => {
+    const handleResize = () => {
+      setTerminalSize(getTerminalDimensions());
+    };
+    process.stdout.on('resize', handleResize);
+    return () => {
+      process.stdout.off('resize', handleResize);
+    };
+  }, []);
 
   // OPTIMIZATION #6: Memoize flattened nodes
   // Recalculates ONLY when collapse state or filter changes
@@ -608,7 +625,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   }
 
   if (showPreview) {
-    const termWidth = getTerminalWidth();
+    const termWidth = terminalSize.width;
     const previewWidth = configPreviewWidth || Math.floor(termWidth * 0.5);
     const treeWidth = Math.floor(termWidth * 0.45);
     const previewHeight = Math.min(pageSize, 15);
