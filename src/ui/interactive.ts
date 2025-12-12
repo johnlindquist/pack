@@ -7,6 +7,7 @@
 import { createPrompt, useState, useKeypress, isEnterKey, isSpaceKey, isUpKey, isDownKey, useEffect, useMemo } from "@inquirer/core";
 import { promises as fs } from "node:fs";
 import { Minimatch } from "minimatch";
+import { Fzf } from "fzf";
 import { formatTokenCount } from "../analysis.js";
 import { extractContextWindows, formatContextWindows } from "../context.js";
 import type { FileChoice, TreeNode, TreeCheckboxConfig } from "../types.js";
@@ -250,6 +251,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       const hasGlobChars = /[\*\?\[\]\{\}!]/.test(filterText);
       // OPTIMIZATION #8: Create matcher once outside loop
       if (hasGlobChars) {
+        // Use glob matching for patterns like *.ts
         try {
           const mm = new Minimatch(filterText, { nocase: true, matchBase: true });
           nodes = nodes.filter(node => mm.match(node.path) || mm.match(node.name));
@@ -258,8 +260,12 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
           nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
         }
       } else {
-        const lowerFilter = filterText.toLowerCase();
-        nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
+        // Use fuzzy matching for plain text (e.g., "srcint" matches "src/ui/interactive.ts")
+        const fzf = new Fzf(nodes, {
+          selector: (node: TreeNode) => node.path,
+        });
+        const results = fzf.find(filterText);
+        nodes = results.map(r => r.item);
       }
     }
     return nodes;
@@ -659,10 +665,10 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     const cursorChar = afterCursor.length > 0 ? afterCursor[0] : ' ';
     const restAfterCursor = afterCursor.slice(1);
     const filterDisplay = `${beforeCursor}\x1b[7m${cursorChar}\x1b[0m\x1b[33m${restAfterCursor}`;
-    const modeHint = hasGlobChars ? ' (glob)' : '';
+    const modeHint = hasGlobChars ? ' (glob)' : ' (fuzzy)';
     filterLine = `\x1b[33m🔍 Filter${modeHint}: ${filterDisplay}\x1b[0m  \x1b[90m(←→ move, enter apply, esc cancel, supports *.ts globs)\x1b[0m`;
   } else if (filterText) {
-    const modeHint = hasGlobChars ? ' (glob)' : '';
+    const modeHint = hasGlobChars ? ' (glob)' : ' (fuzzy)';
     filterLine = `\x1b[33m🔍 Filter${modeHint}: "${filterText}"\x1b[0m  \x1b[90m(showing ${flatNodes.length} matches, esc clear)\x1b[0m`;
   }
 
