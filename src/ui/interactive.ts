@@ -7,6 +7,7 @@
 import { createPrompt, useState, useKeypress, isEnterKey, isSpaceKey, isUpKey, isDownKey, useEffect, useMemo } from "@inquirer/core";
 import { promises as fs } from "node:fs";
 import { Minimatch } from "minimatch";
+import { highlight, supportsLanguage } from 'cli-highlight';
 import { formatTokenCount } from "../analysis.js";
 import { extractContextWindows, formatContextWindows } from "../context.js";
 import type { FileChoice, TreeNode, TreeCheckboxConfig } from "../types.js";
@@ -54,15 +55,51 @@ function fitToWidth(str: string, width: number): string {
 }
 
 /**
+ * Get language identifier from file extension for syntax highlighting
+ */
+function getLanguageFromExt(ext: string): string | undefined {
+  const langMap: Record<string, string> = {
+    '.ts': 'typescript',
+    '.tsx': 'typescript',
+    '.js': 'javascript',
+    '.jsx': 'javascript',
+    '.json': 'json',
+    '.md': 'markdown',
+    '.py': 'python',
+    '.rs': 'rust',
+    '.go': 'go',
+    '.java': 'java',
+    '.c': 'c',
+    '.cpp': 'cpp',
+    '.h': 'c',
+    '.css': 'css',
+    '.scss': 'scss',
+    '.html': 'html',
+    '.xml': 'xml',
+    '.yaml': 'yaml',
+    '.yml': 'yaml',
+    '.sh': 'bash',
+    '.bash': 'bash',
+    '.zsh': 'bash',
+    '.sql': 'sql',
+    '.rb': 'ruby',
+    '.php': 'php',
+  };
+  return langMap[ext.toLowerCase()];
+}
+
+/**
  * Format preview content with line numbers and optional match highlighting
  * OPTIMIZATION #5: Returns raw lines; highlighting applied only to visible lines in render
  */
 function formatPreviewContent(
   content: string,
   pattern: RegExp | null,
-  contextLines?: number
+  contextLines?: number,
+  fileExt?: string
 ): { lines: string[]; totalLines: number; hasMatches: boolean } {
   // If we have a pattern and context lines, show context windows instead
+  // Note: Context windows are NOT syntax highlighted (keep existing behavior)
   if (pattern && contextLines) {
     const windows = extractContextWindows(content, pattern, contextLines, false);
     if (windows.length > 0) {
@@ -72,8 +109,20 @@ function formatPreviewContent(
     }
   }
 
-  // Simply split lines here; coloring happens only for visible lines in the render loop
-  const allLines = content.split('\n');
+  // Apply syntax highlighting if we have a file extension
+  let processedContent = content;
+  if (fileExt) {
+    const lang = getLanguageFromExt(fileExt);
+    if (lang && supportsLanguage(lang)) {
+      try {
+        processedContent = highlight(content, { language: lang, ignoreIllegals: true });
+      } catch {
+        // Highlighting failed, use original content
+      }
+    }
+  }
+
+  const allLines = processedContent.split('\n');
   return { lines: allLines, totalLines: allLines.length, hasMatches: false };
 }
 
@@ -362,13 +411,18 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const { rawPreviewLines, previewTotalLines } = useMemo(() => {
     if (!previewContent) return { rawPreviewLines: [] as string[], previewTotalLines: 0 };
 
+    // Get file extension from the current node for syntax highlighting
+    const node = flatNodes[cursor];
+    const fileExt = node && !node.isFolder ? node.ext : undefined;
+
     const { lines, totalLines } = formatPreviewContent(
       previewContent,
       searchPattern,
-      contextLines
+      contextLines,
+      fileExt
     );
     return { rawPreviewLines: lines, previewTotalLines: totalLines };
-  }, [previewContent, searchPattern, contextLines]);
+  }, [previewContent, searchPattern, contextLines, flatNodes, cursor]);
 
   useKeypress((key: any) => {
     if (isEnterKey(key)) {
