@@ -666,6 +666,12 @@ export class Packer {
     const cwd = process.cwd();
     const limit = pLimit(CONCURRENCY_LIMIT);
     const { cache } = this;
+    const total = files.length;
+    let processed = 0;
+    let lastEmitted = 0;
+
+    // Emit initial progress
+    this.emitProgress({ phase: 'filtering', message: 'Counting tokens...', current: 0, total });
 
     // Load cache if not already loaded
     await cache.load();
@@ -677,26 +683,41 @@ export class Packer {
             const relPath = path.relative(cwd, file);
             const ext = path.extname(file).toLowerCase().replace('.', '');
 
-            // Try cache first
-            const cached = await cache.get(file);
-            if (cached) {
-              return { path: file, relPath, tokens: cached.tokens, ext };
-            }
+            try {
+              // Try cache first
+              const cached = await cache.get(file);
+              if (cached) {
+                return { path: file, relPath, tokens: cached.tokens, ext };
+              }
 
-            // Fallback to full analysis
-            const analysis = await analyzeFile(file);
+              // Fallback to full analysis
+              const analysis = await analyzeFile(file);
 
-            // Cache the result
-            if (!analysis.isBinary) {
-              try {
-                const content = await fs.readFile(file);
-                await cache.set(file, content, { isBinary: analysis.isBinary, tokens: analysis.tokens });
-              } catch {
-                // Ignore cache set errors
+              // Cache the result
+              if (!analysis.isBinary) {
+                try {
+                  const content = await fs.readFile(file);
+                  await cache.set(file, content, { isBinary: analysis.isBinary, tokens: analysis.tokens });
+                } catch {
+                  // Ignore cache set errors
+                }
+              }
+
+              return { path: file, relPath, tokens: analysis.tokens, ext };
+            } finally {
+              processed++;
+              // Emit progress every 50 files or 10%
+              const interval = Math.min(50, Math.max(1, Math.floor(total / 10)));
+              if (processed - lastEmitted >= interval || processed === total) {
+                lastEmitted = processed;
+                this.emitProgress({
+                  phase: 'filtering',
+                  message: `Counting tokens... ${processed}/${total}`,
+                  current: processed,
+                  total
+                });
               }
             }
-
-            return { path: file, relPath, tokens: analysis.tokens, ext };
           })
         )
       );

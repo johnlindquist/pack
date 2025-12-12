@@ -202,6 +202,7 @@ async function main() {
 
     // Analyze files for token info
     const analysisResults = await packer.analyzeForInteractive(tempResult.matchedFiles);
+    clearProgress();
     const fileChoices = analysisResults.map(r => ({
       path: r.path,
       relPath: r.relPath,
@@ -259,11 +260,10 @@ async function main() {
       process.exit(2);
     }
 
-    log(`\n🎯 Interactive mode: Analyzing ${tempResult.matchedFiles.length} files for token counts...\n`);
-
     try {
       // Analyze files for token counts
       const analysisResults = await packer.analyzeForInteractive(tempResult.matchedFiles);
+      clearProgress();
 
       const fileChoices: FileChoice[] = analysisResults.map(r => ({
         path: r.path,
