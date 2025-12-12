@@ -596,7 +596,9 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)\x1b[0m`;
     const helpLine = '\x1b[90m(↑↓ navigate, space toggle ext, e/esc back to tree, enter confirm)\x1b[0m';
 
-    return `📁 Filter by Extension:\n${lines.join('\n')}${totalLine}\n${helpLine}`;
+    // Hide cursor to prevent jiggle in footer area
+    const hideCursor = '\x1b[?25l';
+    return `${hideCursor}📁 Filter by Extension:\n${lines.join('\n')}${totalLine}\n${helpLine}`;
   }
 
   // Render tree view with pagination
@@ -752,13 +754,17 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       ? '\x1b[90m(tab: back to tree, PgUp/PgDn: scroll, g/G: top/bottom)\x1b[0m'
       : '\x1b[90m(↑↓ navigate, space toggle, tab: preview, a all, e extensions, / filter, enter confirm)\x1b[0m';
 
-    return `${config.message}\n${filterLine ? filterLine + '\n' : ''}${combinedLines.join('\n')}${totalLine}\n${helpLine}`;
+    // Hide cursor to prevent jiggle in footer area (cursor only needed when typing in filter)
+    const hideCursor = '\x1b[?25l';
+    return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${combinedLines.join('\n')}${totalLine}\n${helpLine}`;
   }
 
   // Standard view without preview
   const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, a all, e extensions, / filter, enter confirm)\x1b[0m';
 
-  return `${config.message}\n${filterLine ? filterLine + '\n' : ''}${treeLines.join('\n')}${totalLine}\n${helpLine}`;
+  // Hide cursor to prevent jiggle in footer area
+  const hideCursor = '\x1b[?25l';
+  return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${treeLines.join('\n')}${totalLine}\n${helpLine}`;
 });
 
 /**
