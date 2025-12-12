@@ -766,9 +766,23 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       // Collapse folder or go to parent (h = vim style)
       const node = flatNodes[cursor];
       if (node?.isFolder && !collapsed.has(node.path)) {
+        // Collapse expanded folder
         const next = new Set(collapsed);
         next.add(node.path);
         setCollapsed(next);
+      } else if (node) {
+        // On a file or already-collapsed folder: find and collapse parent
+        const pathParts = node.path.split('/');
+        if (pathParts.length > 1) {
+          const parentPath = pathParts.slice(0, -1).join('/');
+          const parentIndex = flatNodes.findIndex(n => n.path === parentPath && n.isFolder);
+          if (parentIndex !== -1) {
+            const next = new Set(collapsed);
+            next.add(parentPath);
+            setCollapsed(next);
+            setCursor(parentIndex);
+          }
+        }
       }
     } else if (key.name === 'right' || key.name === 'l') {
       // Expand folder (l = vim style)
