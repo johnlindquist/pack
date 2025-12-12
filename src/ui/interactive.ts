@@ -335,6 +335,9 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const [stripCommentsEnabled, setStripCommentsEnabled] = useState<boolean>(false);
   const [liveContextLines, setLiveContextLines] = useState<number>(contextLines || 0);
 
+  // Help overlay state
+  const [showHelp, setShowHelp] = useState<boolean>(false);
+
   // Terminal dimensions (reactive to resize)
   const [terminalSize, setTerminalSize] = useState(getTerminalDimensions);
 
@@ -545,6 +548,18 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   }, [previewContent, searchPattern, liveContextLines, flatNodes, cursor]);
 
   useKeypress((key: any) => {
+    // Toggle help overlay with '?' key (but not while filtering)
+    if (key.sequence === '?' && !isFiltering) {
+      setShowHelp(!showHelp);
+      return;
+    }
+
+    // When help is shown, any key dismisses it
+    if (showHelp) {
+      setShowHelp(false);
+      return;
+    }
+
     if (isEnterKey(key)) {
       if (isFiltering) {
         setIsFiltering(false);
@@ -953,6 +968,47 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
   const totalTokens = useMemo(() => files.reduce((sum, f) => sum + f.tokens, 0), [files]);
 
+  // Render help overlay when showHelp is true
+  if (showHelp) {
+    const hideCursor = '\x1b[?25l';
+    const helpContent = `${hideCursor}
+\x1b[1m╭──────────────────────────────────────────────────────────────╮
+│                     KEYBOARD SHORTCUTS                       │
+├──────────────────────────────────────────────────────────────┤
+│  Navigation                                                  │
+│    ↑/k, ↓/j     Move cursor up/down                         │
+│    g            Jump to top                                  │
+│    G            Jump to bottom                               │
+│    ←/h          Collapse folder / go to parent              │
+│    →/l          Expand folder                                │
+├──────────────────────────────────────────────────────────────┤
+│  Selection                                                   │
+│    Space        Toggle selection                             │
+│    Shift+Space  Range select (from anchor)                   │
+│    v            Set/clear selection anchor                   │
+│    a            Toggle all visible                           │
+├──────────────────────────────────────────────────────────────┤
+│  Features                                                    │
+│    /            Search/filter files                          │
+│    d            Select dependencies of current file          │
+│    x            Banish to .packignore                        │
+│    o            Open file in editor                          │
+│    e            Extension filter mode                        │
+│    c            Toggle comment stripping                     │
+│    +/-          Adjust context lines                         │
+├──────────────────────────────────────────────────────────────┤
+│  Preview (when enabled)                                      │
+│    Tab          Focus preview pane                           │
+│    PgUp/PgDn    Scroll preview                               │
+├──────────────────────────────────────────────────────────────┤
+│    Enter        Confirm selection                            │
+│    ?            Toggle this help                             │
+╰──────────────────────────────────────────────────────────────╯\x1b[0m
+
+\x1b[90mPress any key to close\x1b[0m`;
+    return helpContent;
+  }
+
   if (showExtensions) {
     // Render extension list
     const lines = extSummary.map((ext, i) => {
@@ -1170,8 +1226,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     }
 
     const helpLine = previewFocused
-      ? '\x1b[90m(tab: back to tree, PgUp/PgDn: scroll, g/G: top/bottom)\x1b[0m'
-      : '\x1b[90m(↑↓ navigate, space/shift+space toggle, v anchor, d deps, x banish, o open, c comments, +/- ctx, tab: preview, a all, e ext, / filter, enter)\x1b[0m';
+      ? '\x1b[90m(tab: back to tree, PgUp/PgDn: scroll, ? help)\x1b[0m'
+      : '\x1b[90m(? help, enter confirm)\x1b[0m';
 
     // Show dependency resolution feedback message
     const depMessageLine = depMessage ? `\x1b[33m${depMessage}\x1b[0m\n` : '';
@@ -1185,7 +1241,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   }
 
   // Standard view without preview
-  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space/shift+space toggle, v anchor, d deps, x banish, o open, c comments, +/- ctx, a all, e ext, / filter, enter)\x1b[0m';
+  const helpLine = '\x1b[90m(? help, enter confirm)\x1b[0m';
 
   // Show dependency resolution feedback message
   const depMessageLine = depMessage ? `\x1b[33m${depMessage}\x1b[0m\n` : '';
