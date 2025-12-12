@@ -25,6 +25,7 @@ import { runExplainMode } from "./explainer.js";
 import { setVerbose, error as logError } from "./logger.js";
 import { loadBundles, calculateBundleStats, getBundleFileIndices, saveBundle } from "./bundles.js";
 import { isGitRepository, getGitDirtyFiles } from "./git.js";
+import type { ProgressEvent } from "./types.js";
 
 const VERSION = "4.0.0";
 
@@ -138,9 +139,31 @@ async function main() {
     process.exit(0);
   }
 
-  // Create packer
-  const packer = new Packer(options);
   const log = (msg: string) => (options.toStdout ? console.error(msg) : console.log(msg));
+
+  // Progress display for scanning feedback (only when stderr is a TTY)
+  let lastProgressLine = '';
+  const isTTY = process.stderr.isTTY;
+  const showProgress = (event: ProgressEvent) => {
+    if (!isTTY) return; // Skip progress for non-interactive output
+    // Clear previous line and write new progress
+    if (lastProgressLine) {
+      process.stderr.write('\r' + ' '.repeat(lastProgressLine.length) + '\r');
+    }
+    const line = `🔍 ${event.message}`;
+    process.stderr.write(line);
+    lastProgressLine = line;
+  };
+  const clearProgress = () => {
+    if (!isTTY) return;
+    if (lastProgressLine) {
+      process.stderr.write('\r' + ' '.repeat(lastProgressLine.length) + '\r');
+      lastProgressLine = '';
+    }
+  };
+
+  // Create packer with progress callback
+  const packer = new Packer({ ...options, onProgress: showProgress });
 
   // Handle --bundle flag (non-interactive bundle loading)
   const bundleName = parsed.bundle;
@@ -168,8 +191,9 @@ async function main() {
     log(`📦 Loading bundle "${bundle.name}"...`);
 
     // Use packer to discover all candidate files
-    const tempPacker = new Packer({ ...options, interactive: false, usePackignore: false });
+    const tempPacker = new Packer({ ...options, interactive: false, usePackignore: false, onProgress: showProgress });
     const tempResult = await tempPacker.pack();
+    clearProgress();
 
     if (tempResult.matchedFiles.length === 0) {
       console.error("⚠️  No files found matching criteria.");
@@ -226,8 +250,9 @@ async function main() {
   if (options.interactive && process.stdin.isTTY && !options.toStdout) {
     // Use packer to discover files (but not process them yet)
     // Temporarily disable packignore to show all files (they'll start unselected)
-    const tempPacker = new Packer({ ...options, interactive: false, usePackignore: false });
+    const tempPacker = new Packer({ ...options, interactive: false, usePackignore: false, onProgress: showProgress });
     const tempResult = await tempPacker.pack();
+    clearProgress();
 
     if (tempResult.matchedFiles.length === 0) {
       console.warn("⚠️  No files found matching criteria.");
@@ -523,6 +548,7 @@ async function main() {
   } else {
     // Non-interactive mode
     const result = await packer.pack();
+    clearProgress();
 
     if (result.matchedFiles.length === 0) {
       if (result.candidatesFound === 0) {

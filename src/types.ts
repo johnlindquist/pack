@@ -276,6 +276,9 @@ export type PackerOptions = {
 
   // Verbose mode (detailed error logging)
   verbose: boolean;
+
+  // Progress callback for UX feedback
+  onProgress?: ProgressCallback;
 };
 
 // ============================================================================
@@ -296,3 +299,18 @@ export type SkippedFile = {
   reason: 'oversized';
   tokens: number;
 };
+
+// ============================================================================
+// Progress Event Types
+// ============================================================================
+
+export type ProgressPhase = 'discovery' | 'filtering' | 'processing';
+
+export type ProgressEvent = {
+  phase: ProgressPhase;
+  message: string;
+  current?: number;
+  total?: number;
+};
+
+export type ProgressCallback = (event: ProgressEvent) => void;

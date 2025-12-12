@@ -10,7 +10,7 @@ import { Minimatch } from "minimatch";
 import pLimit from "p-limit";
 import ignore from "ignore";
 
-import type { PackerOptions, FileStats, OutputChunk, SkippedFile } from "./types.js";
+import type { PackerOptions, FileStats, OutputChunk, SkippedFile, ProgressEvent } from "./types.js";
 import { buildPattern } from "./utils.js";
 import { isGitRepository, getGitStagedFiles, getGitDirtyFiles, getGitDiffFiles } from "./git.js";
 import { loadGitignore, loadPackignore, DEFAULT_IGNORE_PATTERNS, expandWithRelatedFiles } from "./scanner.js";
@@ -58,6 +58,13 @@ export class Packer {
   }
 
   /**
+   * Emit a progress event if callback is provided
+   */
+  private emitProgress(event: ProgressEvent): void {
+    this.options.onProgress?.(event);
+  }
+
+  /**
    * Execute the full packing pipeline
    */
   async pack(): Promise<PackResult> {
@@ -70,6 +77,7 @@ export class Packer {
 
     try {
       // 1. Discover files
+      this.emitProgress({ phase: 'discovery', message: 'Scanning for files...' });
       const candidates = await this.discoverFiles();
 
       if (candidates.length === 0) {
@@ -80,12 +88,15 @@ export class Packer {
         return this.emptyResult(candidatesFoundIndicator);
       }
 
+      this.emitProgress({ phase: 'discovery', message: `Found ${candidates.length} candidate files`, total: candidates.length });
+
       // 2. Filter by content (skip if ripgrep already did content filtering)
       let matched: string[];
       if (this.usedRipgrep && this.options.searchStrings.length > 0) {
         // Ripgrep already filtered by content, just verify files exist
         matched = await this.verifyFilesExist(candidates);
       } else {
+        this.emitProgress({ phase: 'filtering', message: 'Analyzing files...', current: 0, total: candidates.length });
         matched = await this.filterByContent(candidates);
       }
 
@@ -106,6 +117,7 @@ export class Packer {
       }
 
       // 5. Process and format
+      this.emitProgress({ phase: 'processing', message: `Processing ${matched.length} files...` });
       const result = await this.processFiles(matched, candidates.length);
       result.usedRipgrep = this.usedRipgrep;
       return result;
@@ -395,6 +407,9 @@ export class Packer {
     }
 
     const limit = pLimit(CONCURRENCY_LIMIT);
+    const total = files.length;
+    let processed = 0;
+    let lastEmitted = 0;
 
     const results = await Promise.all(
       files.map(p =>
@@ -434,6 +449,19 @@ export class Packer {
             return null;
           } catch {
             return null;
+          } finally {
+            processed++;
+            // Emit progress every 50 files or 10% whichever is smaller (to avoid too many updates)
+            const interval = Math.min(50, Math.max(1, Math.floor(total / 10)));
+            if (processed - lastEmitted >= interval || processed === total) {
+              lastEmitted = processed;
+              this.emitProgress({
+                phase: 'filtering',
+                message: `Analyzing files... ${processed}/${total}`,
+                current: processed,
+                total
+              });
+            }
           }
         })
       )
