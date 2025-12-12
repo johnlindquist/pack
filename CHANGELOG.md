@@ -1,3 +1,33 @@
+# [4.10.0](https://github.com/johnlindquist/pack/compare/v4.9.1...v4.10.0) (2025-12-12)
+
+
+### Bug Fixes
+
+* reset loading state when preview debounce timer is cancelled ([270af1c](https://github.com/johnlindquist/pack/commit/270af1cbef07228ecb5728184d3a7a93dbfc7a30))
+
+
+### Features
+
+* add open in editor hotkey (o) ([afc2aa1](https://github.com/johnlindquist/pack/commit/afc2aa11faf4df3d11eefe5bfa103aaae46c3cc2))
+* merge dependency resolution hotkey ([34699a2](https://github.com/johnlindquist/pack/commit/34699a218f9cc7a02c345a4be733b6dcfb81fdef))
+* merge fuzzy search filtering ([f310e15](https://github.com/johnlindquist/pack/commit/f310e15d6edad4eb06bcf32c15b74f23fcf845b2))
+* merge git status decorators ([ae2fe76](https://github.com/johnlindquist/pack/commit/ae2fe763fa40257d019ec18ad185f4f490c9af01))
+* merge live context toggles ([5a196f5](https://github.com/johnlindquist/pack/commit/5a196f5dcb58ecc5e4912f655cfea72fe22676e5))
+* merge quick banish to packignore ([b5ac957](https://github.com/johnlindquist/pack/commit/b5ac9574ffd1e523ec43e4e9c669be9baaae6568))
+* merge syntax highlighting ([e2c9087](https://github.com/johnlindquist/pack/commit/e2c90876de0571bffe0a3f474883c258bf727288))
+* merge token budget progress bar ([34f943e](https://github.com/johnlindquist/pack/commit/34f943ed1738e214a6fe437fe0fea475bbcd3b00))
+* **ui:** add dependency resolution hotkey (d) ([658dd73](https://github.com/johnlindquist/pack/commit/658dd73949f8054bd4bdc7408afe349b517a04f2))
+* **ui:** add fuzzy search filtering ([0f966fd](https://github.com/johnlindquist/pack/commit/0f966fdca00032bb0043eb0a216d118a00a81961))
+* **ui:** add git status decorators [M]/[A]/[?] ([410214c](https://github.com/johnlindquist/pack/commit/410214cc414ab627a9e0a652d17cd3bcf20aee5d))
+* **ui:** add live context/comment toggles (c, +/-) ([395e298](https://github.com/johnlindquist/pack/commit/395e298714e3c8378ceafddb7303faa26168df5d))
+* **ui:** add quick banish to .packignore (x) ([596e562](https://github.com/johnlindquist/pack/commit/596e562bd27cd334c92dad3df73651c3cb572f77))
+* **ui:** add range selection with shift+space and v anchor ([143e937](https://github.com/johnlindquist/pack/commit/143e9376545f9bcc79de05e5ffc811c9db1e847c))
+* **ui:** add range selection with shift+space and v anchor ([889ba2c](https://github.com/johnlindquist/pack/commit/889ba2ce9543e3c45bcdf5c59cd613b7b612eb95))
+* **ui:** add syntax highlighting to preview pane ([37a677a](https://github.com/johnlindquist/pack/commit/37a677a52ef4fbb9f7b9b4d5d02ef6f7e567daad))
+* **ui:** add vim-style navigation (j/k/g/G/h/l) ([2083ecd](https://github.com/johnlindquist/pack/commit/2083ecda712cdc5be909d4fe42bb2126394080de))
+* **ui:** add vim-style navigation (j/k/g/G/h/l) ([1b1a9b2](https://github.com/johnlindquist/pack/commit/1b1a9b296b09fc1212727c69c3336f82692a9ed9))
+* **ui:** add visual token budget progress bar with --limit flag ([b6ae06b](https://github.com/johnlindquist/pack/commit/b6ae06b3b9b66fa577f4a14496ac645891a33307))
+
 ## [4.9.1](https://github.com/johnlindquist/pack/compare/v4.9.0...v4.9.1) (2025-12-12)
 
 
