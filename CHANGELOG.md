@@ -1,3 +1,10 @@
+# [4.13.0](https://github.com/johnlindquist/pack/compare/v4.12.0...v4.13.0) (2025-12-12)
+
+
+### Features
+
+* add progress feedback during token counting ([628904e](https://github.com/johnlindquist/pack/commit/628904ee55febafc247e7dd4d2102f7ca3332163))
+
 # [4.12.0](https://github.com/johnlindquist/pack/compare/v4.11.0...v4.12.0) (2025-12-12)
 
 
