@@ -15,7 +15,7 @@ import { spawn } from "node:child_process";
 import { input, select, confirm } from "@inquirer/prompts";
 
 import { printHelp } from "./cli.js";
-import { resolveConfig, generatePackignore } from "./config.js";
+import { resolveConfig, generatePackignore, parseTokenLimit } from "./config.js";
 import { formatTokenCount, getTokenWarning } from "./analysis.js";
 import { treeCheckbox, type FileChoice, type InteractiveResult } from "./ui/interactive.js";
 import { loadPackignore } from "./scanner.js";
@@ -308,6 +308,9 @@ async function main() {
       // Get the search pattern for preview highlighting
       const searchPattern = packer.getPattern();
 
+      // Parse token limit from CLI
+      const tokenLimit = parseTokenLimit(parsed.limit);
+
       const result = await treeCheckbox({
         message: activeBundleName ? `Refine bundle "${activeBundleName}":` : "Select files to bundle:",
         files: fileChoices,
@@ -317,6 +320,7 @@ async function main() {
         contextLines: options.contextLines,
         packignoreIndices,
         initialSelectedIndices,
+        tokenLimit,
       });
 
       const selected = result.selectedPaths;

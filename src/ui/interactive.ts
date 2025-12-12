@@ -25,6 +25,55 @@ const fileContentCache = new Map<string, string>();
 const MAX_PREVIEW_BYTES = 20 * 1024; // OPTIMIZATION #4: Limit preview read to 20KB
 
 /**
+ * Render a visual token budget progress bar
+ * Shows selected tokens vs limit with color coding:
+ * - Green (0-60%): Safe zone
+ * - Yellow (60-85%): Caution zone
+ * - Red (85%+): Danger zone
+ */
+function renderTokenBudgetBar(
+  selectedTokens: number,
+  totalTokens: number,
+  limit: number,
+  terminalWidth: number
+): string {
+  const percentage = Math.min(100, (selectedTokens / limit) * 100);
+
+  // Calculate bar width (reserve space for labels and brackets)
+  // Format: [████████........] 15.4k / 32k (48%)
+  const labelWidth = 30; // Space for " 15.4k / 32k (48%)" etc
+  const barWidth = Math.max(10, Math.min(40, terminalWidth - labelWidth - 4));
+
+  const filledCount = Math.round((percentage / 100) * barWidth);
+  const emptyCount = barWidth - filledCount;
+
+  // Color based on percentage
+  let color: string;
+  if (percentage < 60) {
+    color = '\x1b[32m'; // Green
+  } else if (percentage < 85) {
+    color = '\x1b[33m'; // Yellow
+  } else {
+    color = '\x1b[31m'; // Red
+  }
+  const reset = '\x1b[0m';
+
+  // Format token counts with k suffix
+  const formatK = (n: number): string => {
+    if (n >= 1000) {
+      return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    }
+    return n.toString();
+  };
+
+  const filled = '\u2588'.repeat(filledCount);  // Full block
+  const empty = '\u2591'.repeat(emptyCount);     // Light shade
+  const percentStr = percentage.toFixed(0) + '%';
+
+  return `${color}[${filled}${empty}]${reset} ${formatK(selectedTokens)} / ${formatK(limit)} (${percentStr})`;
+}
+
+/**
  * Get terminal dimensions, defaulting to 80x24 if unavailable
  */
 function getTerminalDimensions(): { width: number; height: number } {
@@ -177,7 +226,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     searchPattern = null,
     contextLines,
     packignoreIndices = new Set<number>(),
-    initialSelectedIndices
+    initialSelectedIndices,
+    tokenLimit
   } = config;
 
   // OPTIMIZATION #1: Memoize tree construction (static for the prompt lifetime)
@@ -597,7 +647,14 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       return `${style}${pointer} ${checkbox} ${ext.ext} (${ext.count} files, ${formatTokenCount(ext.tokens)} tokens)${reset}`;
     });
 
-    const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)\x1b[0m`;
+    // Token summary line - use progress bar if limit is set
+    let totalLine: string;
+    if (tokenLimit) {
+      const budgetBar = renderTokenBudgetBar(selectedTokens, totalTokens, tokenLimit, terminalSize.width);
+      totalLine = `\n\x1b[1m📊 Token Budget: ${budgetBar} (${selected.size}/${files.length} files)\x1b[0m`;
+    } else {
+      totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)\x1b[0m`;
+    }
     const helpLine = '\x1b[90m(↑↓ navigate, space toggle ext, e/esc back to tree, enter confirm)\x1b[0m';
 
     // Hide cursor to prevent jiggle in footer area
@@ -647,7 +704,14 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     treeLines.push('\x1b[90m  ↓ more below\x1b[0m');
   }
 
-  const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)\x1b[0m`;
+  // Token summary line - use progress bar if limit is set
+  let totalLine: string;
+  if (tokenLimit) {
+    const budgetBar = renderTokenBudgetBar(selectedTokens, totalTokens, tokenLimit, terminalSize.width);
+    totalLine = `\n\x1b[1m📊 Token Budget: ${budgetBar} (${selected.size}/${files.length} files)\x1b[0m`;
+  } else {
+    totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)\x1b[0m`;
+  }
 
   // Show filter input or help line
   let filterLine = '';

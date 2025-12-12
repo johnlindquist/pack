@@ -83,6 +83,9 @@ export type Argv = {
   // Bundles
   bundle?: string;                 // -b, --bundle (load a saved bundle by name)
 
+  // Token budget
+  limit?: string;                  // --limit (token budget for progress bar)
+
   // Legacy mappings
   extensions?: string | string[];
   e?: string | string[];           // alias
@@ -206,6 +209,7 @@ export type TreeCheckboxConfig = {
   contextLines?: number;  // Number of context lines around matches
   packignoreIndices?: Set<number>;  // File indices that match .packignore (start unselected)
   initialSelectedIndices?: Set<number>;  // Explicit initial selection (e.g., from a bundle)
+  tokenLimit?: number;  // Token budget limit for progress bar visualization
 };
 
 // ============================================================================
