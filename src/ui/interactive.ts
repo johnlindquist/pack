@@ -6,6 +6,7 @@
 
 import { createPrompt, useState, useKeypress, isEnterKey, isSpaceKey, isUpKey, isDownKey, useEffect, useMemo } from "@inquirer/core";
 import { promises as fs } from "node:fs";
+import * as path from "node:path";
 import { Minimatch } from "minimatch";
 import { formatTokenCount } from "../analysis.js";
 import { extractContextWindows, formatContextWindows } from "../context.js";
@@ -204,6 +205,10 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const [filterCursor, setFilterCursor] = useState<number>(0);
   const [isFiltering, setIsFiltering] = useState<boolean>(false);
 
+  // Banish state for quick ignoring files/folders
+  const [banished, setBanished] = useState<Set<string>>(new Set());
+  const [banishMessage, setBanishMessage] = useState<string>('');
+
   // Preview state
   const [previewScroll, setPreviewScroll] = useState<number>(0);
   const [previewFocused, setPreviewFocused] = useState<boolean>(false);
@@ -225,6 +230,14 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     };
   }, []);
 
+  // Auto-dismiss banish message after 2 seconds
+  useEffect(() => {
+    if (banishMessage) {
+      const timer = setTimeout(() => setBanishMessage(''), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [banishMessage]);
+
   // OPTIMIZATION #6: Memoize flattened nodes
   // Recalculates ONLY when collapse state or filter changes
   const flatNodes = useMemo(() => {
@@ -245,6 +258,19 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
     let nodes = flatten(tree);
 
+    // Filter out banished paths
+    if (banished.size > 0) {
+      nodes = nodes.filter(node => {
+        // Check if this node or any parent is banished
+        for (const bannedPath of banished) {
+          if (node.path === bannedPath || node.path.startsWith(bannedPath + '/')) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+
     // Apply filter if active
     if (filterText) {
       const hasGlobChars = /[\*\?\[\]\{\}!]/.test(filterText);
@@ -263,7 +289,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       }
     }
     return nodes;
-  }, [tree, collapsed, filterText]);
+  }, [tree, collapsed, filterText, banished]);
 
   // Clamp cursor when filtered results change (prevent out-of-bounds)
   useEffect(() => {
@@ -549,6 +575,40 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       // Switch to extension mode
       setShowExtensions(true);
       setCursor(0);
+    } else if (key.name === 'x' && !previewFocused) {
+      // Banish current item to .packignore
+      const node = flatNodes[cursor];
+      if (node) {
+        // Get the relative path to banish
+        const banishPath = node.path;
+
+        // Deselect the node
+        const next = new Set(selected);
+        node.fileIndices.forEach(i => next.delete(i));
+        setSelected(next);
+
+        // Add to banished set (hides from UI)
+        const nextBanished = new Set(banished);
+        nextBanished.add(banishPath);
+        setBanished(nextBanished);
+
+        // Append to .packignore file
+        (async () => {
+          try {
+            const packignorePath = path.join(process.cwd(), '.packignore');
+            const entry = node.isFolder ? `${banishPath}/` : banishPath;
+            await fs.appendFile(packignorePath, `\n${entry}`);
+            setBanishMessage(`Banished: ${node.name} → .packignore`);
+          } catch (err) {
+            setBanishMessage(`Failed to update .packignore`);
+          }
+        })();
+
+        // Move cursor if at end
+        if (cursor >= flatNodes.length - 1 && cursor > 0) {
+          setCursor(cursor - 1);
+        }
+      }
     } else if (key.sequence === '/') {
       // Enter filter mode and scroll to top so filter line is visible
       setIsFiltering(true);
@@ -762,19 +822,25 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
     const helpLine = previewFocused
       ? '\x1b[90m(tab: back to tree, PgUp/PgDn: scroll, g/G: top/bottom)\x1b[0m'
-      : '\x1b[90m(↑↓ navigate, space toggle, tab: preview, a all, e extensions, / filter, enter confirm)\x1b[0m';
+      : '\x1b[90m(↑↓ navigate, space toggle, x banish, tab: preview, a all, e extensions, / filter, enter confirm)\x1b[0m';
+
+    // Banish feedback message
+    const banishLine = banishMessage ? `\x1b[33m${banishMessage}\x1b[0m\n` : '';
 
     // Hide cursor to prevent jiggle in footer area (cursor only needed when typing in filter)
     const hideCursor = '\x1b[?25l';
-    return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${combinedLines.join('\n')}${totalLine}\n${helpLine}`;
+    return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${combinedLines.join('\n')}${totalLine}\n${banishLine}${helpLine}`;
   }
 
   // Standard view without preview
-  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, a all, e extensions, / filter, enter confirm)\x1b[0m';
+  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, x banish, a all, e extensions, / filter, enter confirm)\x1b[0m';
+
+  // Banish feedback message
+  const banishLine = banishMessage ? `\x1b[33m${banishMessage}\x1b[0m\n` : '';
 
   // Hide cursor to prevent jiggle in footer area
   const hideCursor = '\x1b[?25l';
-  return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${treeLines.join('\n')}${totalLine}\n${helpLine}`;
+  return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${treeLines.join('\n')}${totalLine}\n${banishLine}${helpLine}`;
 });
 
 /**
