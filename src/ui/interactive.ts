@@ -15,6 +15,8 @@ import type { FileChoice, TreeNode, TreeCheckboxConfig } from "../types.js";
 export type InteractiveResult = {
   selectedPaths: string[];
   globPattern?: string;  // The glob pattern used to filter (if any)
+  stripComments?: boolean;  // Whether to strip comments from output
+  contextLines?: number;    // Number of context lines around matches
 };
 
 // Re-export types for convenience
@@ -211,6 +213,10 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const [previewFilePath, setPreviewFilePath] = useState<string>('');
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
 
+  // Live toggle state for context and comment stripping
+  const [stripCommentsEnabled, setStripCommentsEnabled] = useState<boolean>(false);
+  const [liveContextLines, setLiveContextLines] = useState<number>(contextLines || 0);
+
   // Terminal dimensions (reactive to resize)
   const [terminalSize, setTerminalSize] = useState(getTerminalDimensions);
 
@@ -365,10 +371,10 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     const { lines, totalLines } = formatPreviewContent(
       previewContent,
       searchPattern,
-      contextLines
+      liveContextLines || undefined  // Use live value instead of prop
     );
     return { rawPreviewLines: lines, previewTotalLines: totalLines };
-  }, [previewContent, searchPattern, contextLines]);
+  }, [previewContent, searchPattern, liveContextLines]);
 
   useKeypress((key: any) => {
     if (isEnterKey(key)) {
@@ -383,6 +389,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       const result: InteractiveResult = {
         selectedPaths,
         globPattern: hasGlobChars && filterText ? filterText : undefined,
+        stripComments: stripCommentsEnabled || undefined,
+        contextLines: liveContextLines > 0 ? liveContextLines : undefined,
       };
       done(result);
       return;
@@ -557,6 +565,15 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       // Clear filter
       setFilterText('');
       setCursor(0);
+    } else if (key.name === 'c' && !previewFocused) {
+      // Toggle strip comments
+      setStripCommentsEnabled(!stripCommentsEnabled);
+    } else if ((key.sequence === '+' || key.sequence === '=') && !previewFocused) {
+      // Increase context lines
+      setLiveContextLines(Math.min(liveContextLines + 1, 50));
+    } else if ((key.sequence === '-' || key.sequence === '_') && !previewFocused) {
+      // Decrease context lines
+      setLiveContextLines(Math.max(liveContextLines - 1, 0));
     } else if (showPreview && key.name === 'tab') {
       // Toggle focus between tree and preview
       setPreviewFocused(!previewFocused);
@@ -647,7 +664,13 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     treeLines.push('\x1b[90m  ↓ more below\x1b[0m');
   }
 
-  const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)\x1b[0m`;
+  // Build toggles status string
+  const togglesInfo: string[] = [];
+  if (stripCommentsEnabled) togglesInfo.push('comments:off');
+  if (liveContextLines > 0) togglesInfo.push(`ctx:${liveContextLines}`);
+  const togglesStr = togglesInfo.length > 0 ? ` | ${togglesInfo.join(' ')}` : '';
+
+  const totalLine = `\n\x1b[1m📊 Selected: ${formatTokenCount(selectedTokens)} / ${formatTokenCount(totalTokens)} tokens (${selected.size}/${files.length} files)${togglesStr}\x1b[0m`;
 
   // Show filter input or help line
   let filterLine = '';
@@ -762,7 +785,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
     const helpLine = previewFocused
       ? '\x1b[90m(tab: back to tree, PgUp/PgDn: scroll, g/G: top/bottom)\x1b[0m'
-      : '\x1b[90m(↑↓ navigate, space toggle, tab: preview, a all, e extensions, / filter, enter confirm)\x1b[0m';
+      : '\x1b[90m(↑↓ navigate, space toggle, tab: preview, a all, e ext, / filter, c comments, +/- context, enter confirm)\x1b[0m';
 
     // Hide cursor to prevent jiggle in footer area (cursor only needed when typing in filter)
     const hideCursor = '\x1b[?25l';
@@ -770,7 +793,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   }
 
   // Standard view without preview
-  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, a all, e extensions, / filter, enter confirm)\x1b[0m';
+  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, a all, e ext, / filter, c comments, +/- context, enter confirm)\x1b[0m';
 
   // Hide cursor to prevent jiggle in footer area
   const hideCursor = '\x1b[?25l';
