@@ -1,3 +1,10 @@
+# [4.12.0](https://github.com/johnlindquist/pack/compare/v4.11.0...v4.12.0) (2025-12-12)
+
+
+### Features
+
+* collapse parent folder when pressing left on file ([9e7c311](https://github.com/johnlindquist/pack/commit/9e7c3116cdfdef6874165e81c246a913b1fa5941))
+
 # [4.11.0](https://github.com/johnlindquist/pack/compare/v4.10.0...v4.11.0) (2025-12-12)
 
 
