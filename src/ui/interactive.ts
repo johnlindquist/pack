@@ -550,8 +550,9 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       setShowExtensions(true);
       setCursor(0);
     } else if (key.sequence === '/') {
-      // Enter filter mode
+      // Enter filter mode and scroll to top so filter line is visible
       setIsFiltering(true);
+      setCursor(0);
     } else if (key.name === 'escape' && filterText) {
       // Clear filter
       setFilterText('');
@@ -560,7 +561,10 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       // Toggle focus between tree and preview
       setPreviewFocused(!previewFocused);
     } else if (showPreview && previewFocused) {
-      const previewHeight = Math.min(pageSize, 15);
+      // Use terminal-aware height for scroll calculations
+      const reservedForScroll = (isFiltering || filterText) ? 9 : 7;
+      const maxLines = Math.max(5, terminalSize.height - reservedForScroll);
+      const previewHeight = Math.min(Math.min(pageSize, maxLines), 15);
       const totalLines = previewTotalLines;
 
       if (key.name === 'pageup' || (key.ctrl && key.name === 'u')) {
@@ -602,8 +606,13 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   }
 
   // Render tree view with pagination
-  const startIdx = Math.max(0, Math.min(cursor - Math.floor(pageSize / 2), flatNodes.length - pageSize));
-  const endIdx = Math.min(startIdx + pageSize, flatNodes.length);
+  // Calculate available lines based on terminal height to prevent filter from scrolling off
+  // Reserve space for: message(1) + filter(2 when active) + totalLine(2) + helpLine(1) + scroll indicators(2) + buffer(2)
+  const reservedLines = (isFiltering || filterText) ? 9 : 7;
+  const maxTreeLines = Math.max(5, terminalSize.height - reservedLines);
+  const effectivePageSize = Math.min(pageSize, maxTreeLines);
+  const startIdx = Math.max(0, Math.min(cursor - Math.floor(effectivePageSize / 2), flatNodes.length - effectivePageSize));
+  const endIdx = Math.min(startIdx + effectivePageSize, flatNodes.length);
   const visibleNodes = flatNodes.slice(startIdx, endIdx);
 
   const treeLines = visibleNodes.map((node, i) => {
@@ -661,7 +670,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     const termWidth = terminalSize.width;
     const previewWidth = configPreviewWidth || Math.floor(termWidth * 0.5);
     const treeWidth = Math.floor(termWidth * 0.45);
-    const previewHeight = Math.min(pageSize, 15);
+    // Use same height calculation as tree to keep filter visible
+    const previewHeight = Math.min(effectivePageSize, 15);
 
     const currentNode = flatNodes[cursor];
     const isFile = currentNode && !currentNode.isFolder;
