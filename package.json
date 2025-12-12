@@ -53,7 +53,7 @@
     "@inquirer/prompts": "^8.0.2",
     "@types/yargs": "^17.0.35",
     "chokidar": "^5.0.0",
-    "fzf": "^0.5.2",
+    "cli-highlight": "^2.1.11",
     "glob": "^13.0.0",
     "ignore": "^7.0.5",
     "js-tiktoken": "^1.0.21",
