@@ -324,6 +324,10 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   // Selection anchor for range selection (Shift+Space)
   const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
 
+  // Scroll throttling to prevent continued scrolling after key release
+  const [lastScrollTime, setLastScrollTime] = useState<number>(0);
+  const SCROLL_THROTTLE_MS = 25; // Minimum ms between scroll events
+
   // Dependency resolution feedback message
   const [depMessage, setDepMessage] = useState<string>('');
 
@@ -600,14 +604,20 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
         setFilterCursor(0);
         setCursor(0);
       } else if (isUpKey(key)) {
-        // Allow up navigation while filtering
+        // Allow up navigation while filtering (with throttling)
+        const now = Date.now();
+        if (now - lastScrollTime < SCROLL_THROTTLE_MS) return;
+        setLastScrollTime(now);
         const newCursor = cursor > 0 ? cursor - 1 : flatNodes.length - 1;
         setCursor(newCursor);
         if (showPreview && !previewFocused) {
           setPreviewScroll(0);
         }
       } else if (isDownKey(key)) {
-        // Allow down navigation while filtering
+        // Allow down navigation while filtering (with throttling)
+        const now = Date.now();
+        if (now - lastScrollTime < SCROLL_THROTTLE_MS) return;
+        setLastScrollTime(now);
         const newCursor = cursor < flatNodes.length - 1 ? cursor + 1 : 0;
         setCursor(newCursor);
         if (showPreview && !previewFocused) {
@@ -638,10 +648,17 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     }
 
     if (showExtensions) {
-      // Extension mode navigation
+      // Extension mode navigation (with throttling)
+      const now = Date.now();
+      const shouldThrottleExt = now - lastScrollTime < SCROLL_THROTTLE_MS;
+
       if (isUpKey(key)) {
+        if (shouldThrottleExt) return;
+        setLastScrollTime(now);
         setCursor(cursor > 0 ? cursor - 1 : extSummary.length - 1);
       } else if (isDownKey(key)) {
+        if (shouldThrottleExt) return;
+        setLastScrollTime(now);
         setCursor(cursor < extSummary.length - 1 ? cursor + 1 : 0);
       } else if (isSpaceKey(key)) {
         // Toggle all files of this extension
@@ -663,7 +680,13 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     }
 
     // Tree mode navigation (supports vim-style j/k/g/G/h/l keys)
+    // Throttle scroll events to prevent continued scrolling after key release
+    const now = Date.now();
+    const shouldThrottle = now - lastScrollTime < SCROLL_THROTTLE_MS;
+
     if (isUpKey(key) || key.name === 'k') {
+      if (shouldThrottle) return; // Skip this scroll event
+      setLastScrollTime(now);
       const newCursor = cursor > 0 ? cursor - 1 : flatNodes.length - 1;
       setCursor(newCursor);
       // Reset preview scroll when changing files
@@ -671,6 +694,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
         setPreviewScroll(0);
       }
     } else if (isDownKey(key) || key.name === 'j') {
+      if (shouldThrottle) return; // Skip this scroll event
+      setLastScrollTime(now);
       const newCursor = cursor < flatNodes.length - 1 ? cursor + 1 : 0;
       setCursor(newCursor);
       // Reset preview scroll when changing files
@@ -885,10 +910,18 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       const previewHeight = Math.min(Math.min(pageSize, maxLines), 15);
       const totalLines = previewTotalLines;
 
+      // Throttle preview scroll events
+      const nowPreview = Date.now();
+      const shouldThrottlePreview = nowPreview - lastScrollTime < SCROLL_THROTTLE_MS;
+
       if (key.name === 'pageup' || key.name === 'u' || (key.ctrl && key.name === 'u')) {
+        if (shouldThrottlePreview) return;
+        setLastScrollTime(nowPreview);
         // Scroll up half page (u or ctrl+u = vim style)
         setPreviewScroll(Math.max(0, previewScroll - previewHeight));
       } else if (key.name === 'pagedown' || key.name === 'd' || (key.ctrl && key.name === 'd')) {
+        if (shouldThrottlePreview) return;
+        setLastScrollTime(nowPreview);
         // Scroll down half page (d or ctrl+d = vim style)
         setPreviewScroll(Math.min(totalLines - previewHeight, previewScroll + previewHeight));
       } else if (key.name === 'home' || key.name === 'g') {
