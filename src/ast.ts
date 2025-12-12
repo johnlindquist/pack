@@ -8,12 +8,13 @@ import { join } from "path";
 import { existsSync } from "fs";
 import { verbose } from "./logger.js";
 
-// Find WASM directory - works in both src and dist contexts
+// Find WASM directory for language parsers - works in both src and dist contexts
 function findWasmDir(): string {
   const candidates = [
     join(process.cwd(), "node_modules", "tree-sitter-wasms", "out"),
     join(__dirname, "..", "node_modules", "tree-sitter-wasms", "out"),
     join(__dirname, "..", "..", "node_modules", "tree-sitter-wasms", "out"),
+    join(__dirname, "..", "..", "..", "tree-sitter-wasms", "out"), // global bun install
   ];
   for (const dir of candidates) {
     if (existsSync(dir)) return dir;
@@ -21,6 +22,20 @@ function findWasmDir(): string {
   return candidates[0]; // fallback
 }
 const wasmDir = findWasmDir();
+
+// Find tree-sitter.wasm from web-tree-sitter - needed for Parser.init()
+function findTreeSitterWasm(fileName: string): string {
+  const candidates = [
+    join(process.cwd(), "node_modules", "web-tree-sitter", fileName),
+    join(__dirname, "..", "node_modules", "web-tree-sitter", fileName),
+    join(__dirname, "..", "..", "node_modules", "web-tree-sitter", fileName),
+    join(__dirname, "..", "..", "..", "web-tree-sitter", fileName), // global bun install
+  ];
+  for (const path of candidates) {
+    if (existsSync(path)) return path;
+  }
+  return fileName; // fallback to default behavior
+}
 
 // Comment types for each language
 const commentTypes: Record<string, string[]> = {
@@ -73,7 +88,9 @@ const languageCache = new Map<string, Language>();
 async function initParser(): Promise<Parser> {
   if (parser && parserInitialized) return parser;
 
-  await Parser.init();
+  await Parser.init({
+    locateFile: findTreeSitterWasm,
+  });
   parser = new Parser();
   parserInitialized = true;
   return parser;
