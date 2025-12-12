@@ -265,6 +265,13 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     return nodes;
   }, [tree, collapsed, filterText]);
 
+  // Clamp cursor when filtered results change (prevent out-of-bounds)
+  useEffect(() => {
+    if (cursor >= flatNodes.length && flatNodes.length > 0) {
+      setCursor(flatNodes.length - 1);
+    }
+  }, [flatNodes.length]);
+
   // OPTIMIZATION #7: Memoize extension summary
   const extSummary = useMemo(() => {
     const extMap = new Map<string, { count: number; tokens: number; indices: number[] }>();
@@ -406,26 +413,54 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
           const newText = filterText.slice(0, filterCursor - 1) + filterText.slice(filterCursor);
           setFilterText(newText);
           setFilterCursor(filterCursor - 1);
-          setCursor(0);
+          // Keep cursor position stable - only clamp if out of bounds after filter changes
         }
       } else if (key.name === 'delete') {
         // Delete character at cursor
         if (filterCursor < filterText.length) {
           const newText = filterText.slice(0, filterCursor) + filterText.slice(filterCursor + 1);
           setFilterText(newText);
-          setCursor(0);
+          // Keep cursor position stable
         }
       } else if (key.ctrl && key.name === 'u') {
         // Clear entire filter
         setFilterText('');
         setFilterCursor(0);
         setCursor(0);
-      } else if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) {
-        // Insert character at cursor position
+      } else if (isUpKey(key)) {
+        // Allow up navigation while filtering
+        const newCursor = cursor > 0 ? cursor - 1 : flatNodes.length - 1;
+        setCursor(newCursor);
+        if (showPreview && !previewFocused) {
+          setPreviewScroll(0);
+        }
+      } else if (isDownKey(key)) {
+        // Allow down navigation while filtering
+        const newCursor = cursor < flatNodes.length - 1 ? cursor + 1 : 0;
+        setCursor(newCursor);
+        if (showPreview && !previewFocused) {
+          setPreviewScroll(0);
+        }
+      } else if (isSpaceKey(key) || key.sequence === ' ') {
+        // Toggle current item selection (don't add space to filter)
+        // Note: Check both isSpaceKey and key.sequence because terminals report space differently
+        const node = flatNodes[cursor];
+        if (node) {
+          const next = new Set(selected);
+          const allSelected = node.fileIndices.every(i => selected.has(i));
+          if (allSelected) {
+            node.fileIndices.forEach(i => next.delete(i));
+          } else {
+            node.fileIndices.forEach(i => next.add(i));
+          }
+          setSelected(next);
+        }
+      } else if (key.sequence && key.sequence.length === 1 && key.sequence !== ' ' && !key.ctrl && !key.meta) {
+        // Insert character at cursor position (space is handled above for toggle)
         const newText = filterText.slice(0, filterCursor) + key.sequence + filterText.slice(filterCursor);
         setFilterText(newText);
         setFilterCursor(filterCursor + 1);
-        setCursor(0);
+        // Note: Don't reset cursor - keep selection stable while typing
       }
       return;
     }
@@ -527,10 +562,6 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     } else if (showPreview && previewFocused) {
       const previewHeight = Math.min(pageSize, 15);
       const totalLines = previewTotalLines;
-
-      // DEBUG: Log key info when preview is focused
-      const fs = require('fs');
-      fs.appendFileSync('/tmp/pack-keys.log', `[${new Date().toISOString()}] key: ${JSON.stringify(key)}\n`);
 
       if (key.name === 'pageup' || (key.ctrl && key.name === 'u')) {
         setPreviewScroll(Math.max(0, previewScroll - previewHeight));
