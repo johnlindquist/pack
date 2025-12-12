@@ -44,6 +44,35 @@ export function parseTransformRule(line: string): TransformRule | null {
 }
 
 /**
+ * Parse a token limit string (e.g., "32k", "128K") into a number
+ * - k (lowercase) = multiply by 1000
+ * - K (uppercase) = multiply by 1024
+ * Returns undefined if parsing fails
+ */
+export function parseTokenLimit(limitStr: string | undefined): number | undefined {
+  if (!limitStr) return undefined;
+
+  const trimmed = limitStr.trim();
+  if (!trimmed) return undefined;
+
+  // Check for k/K suffix
+  const match = trimmed.match(/^(\d+(?:\.\d+)?)(k|K)?$/);
+  if (!match) return undefined;
+
+  const value = parseFloat(match[1]);
+  if (isNaN(value)) return undefined;
+
+  const suffix = match[2];
+  if (suffix === 'k') {
+    return Math.round(value * 1000);
+  } else if (suffix === 'K') {
+    return Math.round(value * 1024);
+  }
+
+  return Math.round(value);
+}
+
+/**
  * Generate .packignore content from excluded file patterns
  */
 export function generatePackignore(

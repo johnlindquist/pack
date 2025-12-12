@@ -195,6 +195,13 @@ export function parseArgs(args: string[]): Argv {
       group: 'Bundles:',
     })
 
+    // Token budget
+    .option('limit', {
+      type: 'string',
+      description: 'Token budget limit for visual progress bar (e.g., 32k, 128K)',
+      group: 'Interactive Mode:',
+    })
+
     // Watch mode
     .option('watch', {
       alias: 'w',
@@ -323,6 +330,8 @@ export function printHelp(): void {
                            • Tab to focus/unfocus preview
                            • PgUp/PgDn to scroll preview
                            • With -l, shows context windows around matches
+      --limit <size>       Token budget limit with visual progress bar
+                           Examples: 8k, 32k, 128K (k=1000, K=1024)
 
 \x1b[1mBUNDLES\x1b[0m
   -b, --bundle <name>      Load a saved bundle by name (from .pack/bundles/)
