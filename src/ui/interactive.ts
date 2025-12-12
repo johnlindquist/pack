@@ -9,6 +9,7 @@ import { promises as fs } from "node:fs";
 import { Minimatch } from "minimatch";
 import { formatTokenCount } from "../analysis.js";
 import { extractContextWindows, formatContextWindows } from "../context.js";
+import { extractDependencies } from "../dependencies.js";
 import type { FileChoice, TreeNode, TreeCheckboxConfig } from "../types.js";
 
 // Result type that includes selection and optional glob pattern
@@ -211,6 +212,9 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const [previewFilePath, setPreviewFilePath] = useState<string>('');
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
 
+  // Dependency resolution feedback message
+  const [depMessage, setDepMessage] = useState<string>('');
+
   // Terminal dimensions (reactive to resize)
   const [terminalSize, setTerminalSize] = useState(getTerminalDimensions);
 
@@ -224,6 +228,14 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       process.stdout.off('resize', handleResize);
     };
   }, []);
+
+  // Clear dependency message after 2 seconds
+  useEffect(() => {
+    if (depMessage) {
+      const timer = setTimeout(() => setDepMessage(''), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [depMessage]);
 
   // OPTIMIZATION #6: Memoize flattened nodes
   // Recalculates ONLY when collapse state or filter changes
@@ -557,6 +569,41 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       // Clear filter
       setFilterText('');
       setCursor(0);
+    } else if (key.name === 'd' && !previewFocused) {
+      // Resolve dependencies for current file
+      const node = flatNodes[cursor];
+      if (node && !node.isFolder && node.fileIndices.length > 0) {
+        const fileIdx = node.fileIndices[0];
+        const filePath = files[fileIdx].path;
+
+        // Use async IIFE since useKeypress callback is sync
+        (async () => {
+          const deps = await extractDependencies(filePath);
+          if (deps.length === 0) {
+            setDepMessage('No local dependencies found');
+            return;
+          }
+
+          // Find indices of dependencies in our file list
+          const depPaths = new Set(deps.map(d => d.resolvedPath));
+          const matchedIndices: number[] = [];
+
+          for (let i = 0; i < files.length; i++) {
+            if (depPaths.has(files[i].path)) {
+              matchedIndices.push(i);
+            }
+          }
+
+          if (matchedIndices.length > 0) {
+            const next = new Set(selected);
+            matchedIndices.forEach(i => next.add(i));
+            setSelected(next);
+            setDepMessage(`Selected ${matchedIndices.length} dependencies`);
+          } else {
+            setDepMessage('Dependencies not in file list');
+          }
+        })();
+      }
     } else if (showPreview && key.name === 'tab') {
       // Toggle focus between tree and preview
       setPreviewFocused(!previewFocused);
@@ -762,19 +809,25 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
     const helpLine = previewFocused
       ? '\x1b[90m(tab: back to tree, PgUp/PgDn: scroll, g/G: top/bottom)\x1b[0m'
-      : '\x1b[90m(↑↓ navigate, space toggle, tab: preview, a all, e extensions, / filter, enter confirm)\x1b[0m';
+      : '\x1b[90m(↑↓ navigate, space toggle, d deps, tab: preview, a all, e extensions, / filter, enter confirm)\x1b[0m';
+
+    // Show dependency resolution feedback message
+    const depMessageLine = depMessage ? `\x1b[33m${depMessage}\x1b[0m\n` : '';
 
     // Hide cursor to prevent jiggle in footer area (cursor only needed when typing in filter)
     const hideCursor = '\x1b[?25l';
-    return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${combinedLines.join('\n')}${totalLine}\n${helpLine}`;
+    return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${combinedLines.join('\n')}${totalLine}\n${depMessageLine}${helpLine}`;
   }
 
   // Standard view without preview
-  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, a all, e extensions, / filter, enter confirm)\x1b[0m';
+  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, d deps, a all, e extensions, / filter, enter confirm)\x1b[0m';
+
+  // Show dependency resolution feedback message
+  const depMessageLine = depMessage ? `\x1b[33m${depMessage}\x1b[0m\n` : '';
 
   // Hide cursor to prevent jiggle in footer area
   const hideCursor = '\x1b[?25l';
-  return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${treeLines.join('\n')}${totalLine}\n${helpLine}`;
+  return `${hideCursor}${config.message}\n${filterLine ? filterLine + '\n' : ''}${treeLines.join('\n')}${totalLine}\n${depMessageLine}${helpLine}`;
 });
 
 /**
