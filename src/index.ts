@@ -24,6 +24,7 @@ import { startWatcher } from "./watcher.js";
 import { runExplainMode } from "./explainer.js";
 import { setVerbose, error as logError } from "./logger.js";
 import { loadBundles, calculateBundleStats, getBundleFileIndices, saveBundle } from "./bundles.js";
+import { isGitRepository, getGitDirtyFiles } from "./git.js";
 
 const VERSION = "4.0.0";
 
@@ -308,6 +309,16 @@ async function main() {
       // Get the search pattern for preview highlighting
       const searchPattern = packer.getPattern();
 
+      // Build git status map for interactive UI
+      let gitStatusMap: Map<string, 'M' | 'A' | 'D' | '?'> | undefined;
+      if (await isGitRepository()) {
+        gitStatusMap = new Map();
+        const dirtyFiles = await getGitDirtyFiles();
+        for (const f of dirtyFiles) {
+          gitStatusMap.set(f, 'M'); // Mark all dirty files as modified
+        }
+      }
+
       const result = await treeCheckbox({
         message: activeBundleName ? `Refine bundle "${activeBundleName}":` : "Select files to bundle:",
         files: fileChoices,
@@ -317,6 +328,7 @@ async function main() {
         contextLines: options.contextLines,
         packignoreIndices,
         initialSelectedIndices,
+        gitStatusMap,
       });
 
       const selected = result.selectedPaths;
