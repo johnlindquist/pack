@@ -1,3 +1,12 @@
+## [4.9.1](https://github.com/johnlindquist/pack/compare/v4.9.0...v4.9.1) (2025-12-12)
+
+
+### Bug Fixes
+
+* dynamically size tree list to keep filter line visible ([ff64e46](https://github.com/johnlindquist/pack/commit/ff64e466d13a58894097561eb433f50f1af897bc))
+* hide cursor in interactive UI to prevent footer jiggle ([3e2345b](https://github.com/johnlindquist/pack/commit/3e2345b265482c3ffd53928653eb800d55ca1052))
+* toggle selection works in filter mode ([56ef466](https://github.com/johnlindquist/pack/commit/56ef4661bf24c57e65e013c05435fea82d0bec6c))
+
 # [4.9.0](https://github.com/johnlindquist/pack/compare/v4.8.1...v4.9.0) (2025-12-10)
 
 
