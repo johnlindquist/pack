@@ -516,7 +516,11 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       }
     }, 100);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // Reset loading state when timer is cancelled (fast scrolling)
+      setIsLoadingPreview(false);
+    };
   }, [targetFilePath, previewFilePath]);
 
   // OPTIMIZATION #10: Memoize layout calculations (line splitting)
