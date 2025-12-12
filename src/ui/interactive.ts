@@ -211,6 +211,9 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const [previewFilePath, setPreviewFilePath] = useState<string>('');
   const [isLoadingPreview, setIsLoadingPreview] = useState<boolean>(false);
 
+  // Selection anchor for range selection (Shift+Space)
+  const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null);
+
   // Terminal dimensions (reactive to resize)
   const [terminalSize, setTerminalSize] = useState(getTerminalDimensions);
 
@@ -271,6 +274,13 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       setCursor(flatNodes.length - 1);
     }
   }, [flatNodes.length]);
+
+  // Clamp selection anchor when flatNodes changes (prevent out-of-bounds)
+  useEffect(() => {
+    if (selectionAnchor !== null && selectionAnchor >= flatNodes.length) {
+      setSelectionAnchor(flatNodes.length > 0 ? flatNodes.length - 1 : null);
+    }
+  }, [flatNodes.length, selectionAnchor]);
 
   // OPTIMIZATION #7: Memoize extension summary
   const extSummary = useMemo(() => {
@@ -510,13 +520,48 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       const node = flatNodes[cursor];
       if (node) {
         const next = new Set(selected);
-        const allSelected = node.fileIndices.every(i => selected.has(i));
-        if (allSelected) {
-          node.fileIndices.forEach(i => next.delete(i));
+
+        // Check for shift modifier for range selection
+        if (key.shift && selectionAnchor !== null) {
+          // Range selection from anchor to cursor
+          const start = Math.min(selectionAnchor, cursor);
+          const end = Math.max(selectionAnchor, cursor);
+
+          // Determine action based on anchor's current state
+          const anchorNode = flatNodes[selectionAnchor];
+          const shouldSelect = anchorNode && !anchorNode.fileIndices.every(i => selected.has(i));
+
+          for (let i = start; i <= end; i++) {
+            const rangeNode = flatNodes[i];
+            if (rangeNode) {
+              if (shouldSelect) {
+                rangeNode.fileIndices.forEach(idx => next.add(idx));
+              } else {
+                rangeNode.fileIndices.forEach(idx => next.delete(idx));
+              }
+            }
+          }
         } else {
-          node.fileIndices.forEach(i => next.add(i));
+          // Normal toggle (existing logic)
+          const allSelected = node.fileIndices.every(i => selected.has(i));
+          if (allSelected) {
+            node.fileIndices.forEach(i => next.delete(i));
+          } else {
+            node.fileIndices.forEach(i => next.add(i));
+          }
         }
+
         setSelected(next);
+        // Update anchor to current position after any selection
+        setSelectionAnchor(cursor);
+      }
+    } else if (key.name === 'v' && !previewFocused) {
+      // Set/clear selection anchor for visual mode
+      if (selectionAnchor === cursor) {
+        // Clear anchor if pressing v on same position
+        setSelectionAnchor(null);
+      } else {
+        setSelectionAnchor(cursor);
       }
     } else if (key.name === 'left') {
       // Collapse folder or go to parent
@@ -618,10 +663,19 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const treeLines = visibleNodes.map((node, i) => {
     const actualIdx = startIdx + i;
     const isCursor = actualIdx === cursor;
+    const isAnchor = actualIdx === selectionAnchor;
     const allSelected = node.fileIndices.every(idx => selected.has(idx));
     const someSelected = node.fileIndices.some(idx => selected.has(idx));
     const checkbox = allSelected ? '◉' : (someSelected ? '◐' : '○');
-    const pointer = isCursor ? '❯' : ' ';
+
+    // Modify pointer to show anchor
+    let pointer = isCursor ? '❯' : ' ';
+    if (isAnchor && !isCursor) {
+      pointer = '┃';  // Show anchor marker
+    } else if (isAnchor && isCursor) {
+      pointer = '▶';  // Cursor + anchor combined
+    }
+
     const indent = '  '.repeat(node.depth);
 
     let icon = '';
@@ -762,7 +816,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
     const helpLine = previewFocused
       ? '\x1b[90m(tab: back to tree, PgUp/PgDn: scroll, g/G: top/bottom)\x1b[0m'
-      : '\x1b[90m(↑↓ navigate, space toggle, tab: preview, a all, e extensions, / filter, enter confirm)\x1b[0m';
+      : '\x1b[90m(↑↓ navigate, space/shift+space toggle, v anchor, tab: preview, a all, e extensions, / filter, enter confirm)\x1b[0m';
 
     // Hide cursor to prevent jiggle in footer area (cursor only needed when typing in filter)
     const hideCursor = '\x1b[?25l';
@@ -770,7 +824,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   }
 
   // Standard view without preview
-  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space toggle, a all, e extensions, / filter, enter confirm)\x1b[0m';
+  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space/shift+space toggle, v anchor, a all, e extensions, / filter, enter confirm)\x1b[0m';
 
   // Hide cursor to prevent jiggle in footer area
   const hideCursor = '\x1b[?25l';
