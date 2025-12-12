@@ -7,6 +7,7 @@
 import { createPrompt, useState, useKeypress, isEnterKey, isSpaceKey, isUpKey, isDownKey, useEffect, useMemo } from "@inquirer/core";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
+import { spawn } from "node:child_process";
 import { Minimatch } from "minimatch";
 import { Fzf } from "fzf";
 import { highlight, supportsLanguage } from 'cli-highlight';
@@ -797,6 +798,27 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
           setCursor(cursor - 1);
         }
       }
+    } else if (key.name === 'o' && !previewFocused) {
+      // Open current file in editor
+      const node = flatNodes[cursor];
+      if (node && !node.isFolder && node.fileIndices.length > 0) {
+        const fileIdx = node.fileIndices[0];
+        const filePath = files[fileIdx].path;
+
+        // Detect editor from environment or use defaults
+        const editor = process.env.VISUAL || process.env.EDITOR || 'code';
+
+        // Spawn editor detached so it doesn't block
+        try {
+          const child = spawn(editor, [filePath], {
+            detached: true,
+            stdio: 'ignore'
+          });
+          child.unref();
+        } catch {
+          // Silently fail if editor can't be opened
+        }
+      }
     } else if (key.sequence === '/') {
       // Enter filter mode and scroll to top so filter line is visible
       setIsFiltering(true);
@@ -1098,7 +1120,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
     const helpLine = previewFocused
       ? '\x1b[90m(tab: back to tree, PgUp/PgDn: scroll, g/G: top/bottom)\x1b[0m'
-      : '\x1b[90m(↑↓ navigate, space/shift+space toggle, v anchor, d deps, x banish, c comments, +/- context, tab: preview, a all, e ext, / filter, enter confirm)\x1b[0m';
+      : '\x1b[90m(↑↓ navigate, space/shift+space toggle, v anchor, d deps, x banish, o open, c comments, +/- ctx, tab: preview, a all, e ext, / filter, enter)\x1b[0m';
 
     // Show dependency resolution feedback message
     const depMessageLine = depMessage ? `\x1b[33m${depMessage}\x1b[0m\n` : '';
@@ -1112,7 +1134,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   }
 
   // Standard view without preview
-  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space/shift+space toggle, v anchor, d deps, x banish, c comments, +/- context, a all, e ext, / filter, enter confirm)\x1b[0m';
+  const helpLine = '\x1b[90m(↑↓ navigate, ←→ collapse/expand, space/shift+space toggle, v anchor, d deps, x banish, o open, c comments, +/- ctx, a all, e ext, / filter, enter)\x1b[0m';
 
   // Show dependency resolution feedback message
   const depMessageLine = depMessage ? `\x1b[33m${depMessage}\x1b[0m\n` : '';
