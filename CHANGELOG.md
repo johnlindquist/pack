@@ -1,3 +1,15 @@
+# [4.11.0](https://github.com/johnlindquist/pack/compare/v4.10.0...v4.11.0) (2025-12-12)
+
+
+### Bug Fixes
+
+* throttle scroll events to stop scrolling on key release ([82b4741](https://github.com/johnlindquist/pack/commit/82b47417fbd48b01c0f216ef95cdd61422a1d66c))
+
+
+### Features
+
+* add progress feedback during file scanning ([886b1ca](https://github.com/johnlindquist/pack/commit/886b1ca71b69046109546eee9817e11ed0583912))
+
 # [4.10.0](https://github.com/johnlindquist/pack/compare/v4.9.1...v4.10.0) (2025-12-12)
 
 
