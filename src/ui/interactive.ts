@@ -179,7 +179,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     searchPattern = null,
     contextLines,
     packignoreIndices = new Set<number>(),
-    initialSelectedIndices
+    initialSelectedIndices,
+    gitStatusMap
   } = config;
 
   // OPTIMIZATION #1: Memoize tree construction (static for the prompt lifetime)
@@ -752,12 +753,25 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       icon = '  ';
     }
 
+    // Get git status for this node
+    let gitStatus = '';
+    if (gitStatusMap && !node.isFolder) {
+      const fileIdx = node.fileIndices[0];
+      const filePath = files[fileIdx]?.path;
+      if (filePath && gitStatusMap.has(filePath)) {
+        const status = gitStatusMap.get(filePath);
+        if (status === 'M') gitStatus = '\x1b[33m[M]\x1b[0m '; // Yellow
+        else if (status === 'A') gitStatus = '\x1b[32m[A]\x1b[0m '; // Green
+        else if (status === '?') gitStatus = '\x1b[31m[?]\x1b[0m '; // Red (untracked)
+      }
+    }
+
     const tokenStr = ` (${formatTokenCount(node.tokens)})`;
     const style = isCursor ? '\x1b[36m' : (allSelected ? '\x1b[32m' : (someSelected ? '\x1b[33m' : '\x1b[90m'));
     const reset = '\x1b[0m';
     const folderStyle = node.isFolder ? '\x1b[1m' : '';
 
-    return `${style}${pointer} ${checkbox} ${indent}${icon}${folderStyle}${node.name}${reset}${style}${tokenStr}${reset}`;
+    return `${style}${pointer} ${checkbox} ${indent}${icon}${gitStatus}${folderStyle}${node.name}${reset}${style}${tokenStr}${reset}`;
   });
 
   // Add scroll indicators

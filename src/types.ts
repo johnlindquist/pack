@@ -206,6 +206,7 @@ export type TreeCheckboxConfig = {
   contextLines?: number;  // Number of context lines around matches
   packignoreIndices?: Set<number>;  // File indices that match .packignore (start unselected)
   initialSelectedIndices?: Set<number>;  // Explicit initial selection (e.g., from a bundle)
+  gitStatusMap?: Map<string, 'M' | 'A' | 'D' | '?'>;  // Git status: Modified, Added, Deleted, Untracked
 };
 
 // ============================================================================
