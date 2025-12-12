@@ -490,18 +490,30 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       return;
     }
 
-    // Tree mode navigation
-    if (isUpKey(key)) {
+    // Tree mode navigation (supports vim-style j/k/g/G/h/l keys)
+    if (isUpKey(key) || key.name === 'k') {
       const newCursor = cursor > 0 ? cursor - 1 : flatNodes.length - 1;
       setCursor(newCursor);
       // Reset preview scroll when changing files
       if (showPreview && !previewFocused) {
         setPreviewScroll(0);
       }
-    } else if (isDownKey(key)) {
+    } else if (isDownKey(key) || key.name === 'j') {
       const newCursor = cursor < flatNodes.length - 1 ? cursor + 1 : 0;
       setCursor(newCursor);
       // Reset preview scroll when changing files
+      if (showPreview && !previewFocused) {
+        setPreviewScroll(0);
+      }
+    } else if (key.name === 'g' && !key.shift) {
+      // Jump to top (first item) - vim style
+      setCursor(0);
+      if (showPreview && !previewFocused) {
+        setPreviewScroll(0);
+      }
+    } else if (key.sequence === 'G') {
+      // Jump to bottom (last item) - vim style (shift+g)
+      setCursor(flatNodes.length - 1);
       if (showPreview && !previewFocused) {
         setPreviewScroll(0);
       }
@@ -518,16 +530,16 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
         }
         setSelected(next);
       }
-    } else if (key.name === 'left') {
-      // Collapse folder or go to parent
+    } else if (key.name === 'left' || key.name === 'h') {
+      // Collapse folder or go to parent (h = vim style)
       const node = flatNodes[cursor];
       if (node?.isFolder && !collapsed.has(node.path)) {
         const next = new Set(collapsed);
         next.add(node.path);
         setCollapsed(next);
       }
-    } else if (key.name === 'right') {
-      // Expand folder
+    } else if (key.name === 'right' || key.name === 'l') {
+      // Expand folder (l = vim style)
       const node = flatNodes[cursor];
       if (node?.isFolder && collapsed.has(node.path)) {
         const next = new Set(collapsed);
@@ -567,13 +579,15 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       const previewHeight = Math.min(Math.min(pageSize, maxLines), 15);
       const totalLines = previewTotalLines;
 
-      if (key.name === 'pageup' || (key.ctrl && key.name === 'u')) {
+      if (key.name === 'pageup' || key.name === 'u' || (key.ctrl && key.name === 'u')) {
+        // Scroll up half page (u or ctrl+u = vim style)
         setPreviewScroll(Math.max(0, previewScroll - previewHeight));
-      } else if (key.name === 'pagedown' || (key.ctrl && key.name === 'd')) {
+      } else if (key.name === 'pagedown' || key.name === 'd' || (key.ctrl && key.name === 'd')) {
+        // Scroll down half page (d or ctrl+d = vim style)
         setPreviewScroll(Math.min(totalLines - previewHeight, previewScroll + previewHeight));
       } else if (key.name === 'home' || key.name === 'g') {
         setPreviewScroll(0);
-      } else if (key.name === 'end' || key.name === 'G') {
+      } else if (key.name === 'end' || key.sequence === 'G') {
         setPreviewScroll(Math.max(0, totalLines - previewHeight));
       }
     }
