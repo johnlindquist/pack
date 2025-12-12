@@ -1,3 +1,15 @@
+# [4.14.0](https://github.com/johnlindquist/pack/compare/v4.13.0...v4.14.0) (2025-12-12)
+
+
+### Bug Fixes
+
+* resolve tree-sitter.wasm path for global bun installs ([3bc9440](https://github.com/johnlindquist/pack/commit/3bc94401e5dbe9d5d77e9779d88a3b2e96a9211a))
+
+
+### Features
+
+* **ui:** add ? key for full-screen help overlay ([c62ea75](https://github.com/johnlindquist/pack/commit/c62ea75f887caa4d2141878c1aef449d32eb2638))
+
 # [4.13.0](https://github.com/johnlindquist/pack/compare/v4.12.0...v4.13.0) (2025-12-12)
 
 
