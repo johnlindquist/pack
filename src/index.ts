@@ -214,6 +214,17 @@ async function main() {
     }
 
     options.roots = workspaceRoots;
+
+    // Clear includePatterns if workspace was from shorthand (to avoid treating @org/pkg as glob)
+    if (workspaceFromShorthand) {
+      options.includePatterns = options.includePatterns.filter(
+        p => !p.includes(workspaceFromShorthand!)
+      );
+      // Also clear explicit files that match the shorthand
+      options.explicitFiles = options.explicitFiles.filter(
+        f => !f.includes(workspaceFromShorthand!)
+      );
+    }
   } else if (options.allWorkspaces && monorepoConfig) {
     // Handle --all-workspaces
     log(`📦 Scanning all ${monorepoConfig.workspaces.length} workspaces...`);
