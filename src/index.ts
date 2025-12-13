@@ -36,6 +36,7 @@ import {
   type Workspace,
 } from "./workspaces.js";
 import type { ProgressEvent } from "./types.js";
+import { formatRedactionReport, type RedactionReport } from "./secrets.js";
 
 const VERSION = "4.0.0";
 
@@ -700,8 +701,8 @@ async function main() {
  * Handle output: write to file, stdout, or clipboard
  */
 async function handleOutput(
-  result: { output: string; files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[]; usedRipgrep?: boolean; chunks?: any[]; skippedFiles?: Array<{ path: string; reason: 'oversized'; tokens: number }> },
-  options: { toStdout: boolean; outputFile?: string; copyToClipboard: boolean; contextLines?: number; maxTokens?: number },
+  result: { output: string; files: any[]; totalTokens: number; totalChars: number; totalMatchCount: number; totalWindowCount: number; matchedFiles: string[]; usedRipgrep?: boolean; chunks?: any[]; skippedFiles?: Array<{ path: string; reason: 'oversized'; tokens: number }>; redactionReport?: RedactionReport },
+  options: { toStdout: boolean; outputFile?: string; copyToClipboard: boolean; contextLines?: number; maxTokens?: number; redactReport?: boolean },
   log: (msg: string) => void
 ) {
   const summaryOnly = !options.toStdout && !options.outputFile && !options.copyToClipboard;
@@ -798,6 +799,16 @@ async function handleOutput(
 
   // Print summary
   printSummary(result, options);
+
+  // Print redaction report if requested
+  if (options.redactReport && result.redactionReport) {
+    const reportLog = options.toStdout ? console.error : console.log;
+    reportLog(formatRedactionReport(result.redactionReport));
+  } else if (result.redactionReport && result.redactionReport.totalSecrets > 0) {
+    // Always show a brief notice when secrets were redacted
+    const noticeLog = options.toStdout ? console.error : console.log;
+    noticeLog(`\n🔐 ${result.redactionReport.totalSecrets} secret(s) automatically redacted. Use --redact-report for details.`);
+  }
 }
 
 main().catch((err) => {

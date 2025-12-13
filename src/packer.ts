@@ -21,6 +21,7 @@ import { stripComments, minify, applyTransforms, extractSkeleton } from "./proce
 import { createHeader, createFooter, formatAsJsonl, findAllMatches, type OutputStyle } from "./formatter.js";
 import { isRipgrepAvailable, discoverFilesWithRipgrep, ripgrepExcludeContent } from "./ripgrep.js";
 import { CacheManager, createCacheManager } from "./cache.js";
+import { redactSecrets, createRedactionReport, formatRedactionReport, type DetectedSecret, type RedactionReport } from "./secrets.js";
 
 const CONCURRENCY_LIMIT = 50;
 
@@ -36,6 +37,7 @@ export type PackResult = {
   usedRipgrep?: boolean; // Whether ripgrep was used for discovery
   chunks?: OutputChunk[];  // Populated when maxTokens is set
   skippedFiles?: SkippedFile[];  // Files skipped due to exceeding token limits
+  redactionReport?: RedactionReport;  // Summary of redacted secrets
 };
 
 /**
@@ -488,6 +490,9 @@ export class Packer {
     let totalMatchCount = 0;
     let totalWindowCount = 0;
 
+    // Track detected secrets for the report
+    const fileSecrets = new Map<string, DetectedSecret[]>();
+
     // Process files in parallel
     const fileResults = await Promise.all(
       files.map((filePath, index) =>
@@ -498,7 +503,15 @@ export class Packer {
             const ext = path.extname(relPath);
             const extLabel = ext.slice(1) || 'txt';
 
-            // Apply processing: transforms first (for redaction), then skeleton, comments, minify
+            // Secret redaction FIRST (before any other processing)
+            let detectedSecrets: DetectedSecret[] = [];
+            if (options.redactSecrets) {
+              const redactionResult = redactSecrets(content);
+              content = redactionResult.content;
+              detectedSecrets = redactionResult.detected;
+            }
+
+            // Apply processing: transforms first, then skeleton, comments, minify
             if (options.transforms && options.transforms.length > 0) {
               content = applyTransforms(content, options.transforms);
             }
@@ -539,13 +552,20 @@ export class Packer {
             }
 
             const tokens = countTokens(fileOutput);
-            return { relPath, fileOutput, tokens, size: fileOutput.length, matchCount, windowCount };
+            return { relPath, fileOutput, tokens, size: fileOutput.length, matchCount, windowCount, detectedSecrets };
           } catch (err) {
-            return { relPath, fileOutput: '', tokens: 0, size: 0, matchCount: 0, windowCount: 0, error: err };
+            return { relPath, fileOutput: '', tokens: 0, size: 0, matchCount: 0, windowCount: 0, detectedSecrets: [] as DetectedSecret[], error: err };
           }
         })
       )
     );
+
+    // Collect secrets from all files for the report
+    for (const result of fileResults) {
+      if (result.detectedSecrets && result.detectedSecrets.length > 0) {
+        fileSecrets.set(result.relPath, result.detectedSecrets);
+      }
+    }
 
     // Collect stats for all files
     const fileSizes: FileStats[] = [];
@@ -566,6 +586,11 @@ export class Packer {
     const totalTokens = fileSizes.reduce((sum, f) => sum + f.tokens, 0);
     const totalChars = fileSizes.reduce((sum, f) => sum + f.size, 0);
 
+    // Create redaction report if redaction was enabled
+    const redactionReport = options.redactSecrets && fileSecrets.size > 0
+      ? createRedactionReport(fileSecrets)
+      : undefined;
+
     // Check if we need to split into chunks
     if (options.maxTokens && totalTokens > options.maxTokens) {
       const { chunks, skippedFiles } = this.splitIntoChunks(fileResults, relativePaths, options.maxTokens);
@@ -582,6 +607,7 @@ export class Packer {
         candidatesFound,
         chunks,
         skippedFiles: skippedFiles.length > 0 ? skippedFiles : undefined,
+        redactionReport,
       };
     }
 
@@ -614,6 +640,7 @@ export class Packer {
       totalWindowCount,
       matchedFiles: files,
       candidatesFound,
+      redactionReport,
     };
   }
 

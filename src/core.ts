@@ -118,3 +118,18 @@ export {
   Packer,
   type PackResult
 } from "./packer.js";
+
+// Re-export from secrets
+export {
+  detectSecrets,
+  redactSecrets,
+  createRedactionReport,
+  formatRedactionReport,
+  mightContainSecrets,
+  createSecretTransforms,
+  createRedactionMarker,
+  SECRET_PATTERNS,
+  type SecretType,
+  type DetectedSecret,
+  type RedactionReport
+} from "./secrets.js";

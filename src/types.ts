@@ -50,6 +50,9 @@ export type Argv = {
   "strip-comments"?: boolean;      // --strip-comments
   "no-comments"?: boolean;         // --no-comments (alias)
   minify?: boolean;                // --minify
+  "redact-secrets"?: boolean;      // --redact-secrets (default: true)
+  "no-redact-secrets"?: boolean;   // --no-redact-secrets
+  "redact-report"?: boolean;       // --redact-report
   related?: boolean;               // -r
   r?: boolean;                     // alias
   "follow-imports"?: boolean;      // --follow-imports
@@ -251,6 +254,8 @@ export type PackerOptions = {
   skeleton: boolean;
   stripComments: boolean;
   minify: boolean;
+  redactSecrets: boolean;       // Enable automatic secret detection and redaction (default: true)
+  redactReport: boolean;        // Show redaction report after processing
   contextLines?: number;
   smartContext: boolean;
   includeRelated: boolean;

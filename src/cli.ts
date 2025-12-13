@@ -107,6 +107,22 @@ export function parseArgs(args: string[]): Argv {
       description: 'Remove empty lines and whitespace',
       group: 'Processing:',
     })
+    .option('redact-secrets', {
+      type: 'boolean',
+      default: true,
+      description: 'Detect and redact secrets/API keys (default: true)',
+      group: 'Processing:',
+    })
+    .option('no-redact-secrets', {
+      type: 'boolean',
+      description: 'Disable automatic secret redaction',
+      group: 'Processing:',
+    })
+    .option('redact-report', {
+      type: 'boolean',
+      description: 'Show summary of redacted secrets',
+      group: 'Processing:',
+    })
     .option('lines', {
       alias: 'l',
       type: 'number',
@@ -334,6 +350,9 @@ export function printHelp(): void {
       --strip-comments     Strip comments from code
       --no-comments        Alias for --strip-comments
       --minify             Remove empty lines and whitespace
+      --redact-secrets     Auto-redact secrets/API keys (default: enabled)
+      --no-redact-secrets  Disable automatic secret redaction
+      --redact-report      Show summary of redacted secrets
   -l, --lines <num>        Extract N lines of context around matches
   -r, --related            Include related files (tests, stories)
       --follow-imports     Include files imported by matched files

@@ -246,6 +246,11 @@ export async function resolveConfig(argv: string[]): Promise<{
   // Determine packignore mode
   const usePackignore = !Boolean(parsed["no-packignore"]);
 
+  // Determine secret redaction mode (default: true)
+  // --no-redact-secrets explicitly disables it
+  const redactSecrets = !Boolean(parsed["no-redact-secrets"]);
+  const redactReport = Boolean(parsed["redact-report"]);
+
   const options: PackerOptions = {
     roots: positionalRoots.length ? positionalRoots : ['.'],
     searchStrings,
@@ -260,6 +265,8 @@ export async function resolveConfig(argv: string[]): Promise<{
     skeleton: Boolean(parsed.skeleton),
     stripComments: Boolean(parsed["strip-comments"] || parsed["no-comments"]),
     minify: Boolean(parsed.minify),
+    redactSecrets,
+    redactReport,
     contextLines: parsed.lines || parsed.l,
     smartContext,
     includeRelated: Boolean(parsed.related || parsed.r),
@@ -305,6 +312,8 @@ function createDefaultOptions(): PackerOptions {
     skeleton: false,
     stripComments: false,
     minify: false,
+    redactSecrets: true,  // Default: enabled for security
+    redactReport: false,
     contextLines: undefined,
     smartContext: false,
     includeRelated: false,
