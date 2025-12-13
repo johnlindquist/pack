@@ -25,6 +25,16 @@ import { runExplainMode } from "./explainer.js";
 import { setVerbose, error as logError } from "./logger.js";
 import { loadBundles, calculateBundleStats, getBundleFileIndices, saveBundle } from "./bundles.js";
 import { isGitRepository, getGitDirtyFiles } from "./git.js";
+import {
+  detectMonorepo,
+  resolveWorkspace,
+  listWorkspaces,
+  formatWorkspaceList,
+  getWorkspaceDependencyTree,
+  groupFilesByWorkspace,
+  type MonorepoConfig,
+  type Workspace,
+} from "./workspaces.js";
 import type { ProgressEvent } from "./types.js";
 
 const VERSION = "4.0.0";
@@ -140,6 +150,78 @@ async function main() {
   }
 
   const log = (msg: string) => (options.toStdout ? console.error(msg) : console.log(msg));
+
+  // =========================================================================
+  // Workspace/Monorepo Support
+  // =========================================================================
+
+  // Check for workspace shorthand in positional args (e.g., packx @ui/button)
+  const positionalArgs = parsed._ as (string | number)[] || [];
+  let workspaceFromShorthand: string | undefined;
+  for (const arg of positionalArgs) {
+    const argStr = String(arg);
+    if (argStr.startsWith('@') && !argStr.includes('/node_modules/')) {
+      // Looks like a workspace shorthand
+      workspaceFromShorthand = argStr;
+      break;
+    }
+  }
+
+  // Detect monorepo configuration
+  const monorepoConfig = await detectMonorepo(process.cwd());
+
+  // Handle --workspaces flag (list workspaces and exit)
+  if (parsed.workspaces) {
+    if (!monorepoConfig) {
+      console.log('No monorepo configuration detected.');
+      console.log('Supported: pnpm-workspace.yaml, package.json workspaces, lerna.json, nx.json, turbo.json');
+      process.exit(0);
+    }
+
+    console.log(`\nDetected ${monorepoConfig.type} monorepo at ${monorepoConfig.root}\n`);
+    console.log('Workspaces:');
+    console.log(formatWorkspaceList(listWorkspaces(monorepoConfig)));
+    console.log(`\nTotal: ${monorepoConfig.workspaces.length} workspace(s)`);
+    process.exit(0);
+  }
+
+  // Handle workspace selection (--workspace or shorthand)
+  const workspaceName = options.workspace || workspaceFromShorthand;
+  if (workspaceName && monorepoConfig) {
+    const workspace = await resolveWorkspace(workspaceName, monorepoConfig);
+    if (!workspace) {
+      console.error(`Workspace "${workspaceName}" not found.`);
+      console.error('\nAvailable workspaces:');
+      console.error(formatWorkspaceList(listWorkspaces(monorepoConfig)));
+      process.exit(1);
+    }
+
+    log(`📦 Workspace: ${workspace.name} (${workspace.relativePath})`);
+
+    // Update roots to scan only the workspace
+    const workspaceRoots = [workspace.path];
+
+    // Handle --follow-workspace-deps
+    if (options.followWorkspaceDeps) {
+      const deps = getWorkspaceDependencyTree(workspace, monorepoConfig);
+      if (deps.length > 0) {
+        log(`📦 Including ${deps.length} workspace dependencies:`);
+        for (const dep of deps) {
+          log(`   - ${dep.name}`);
+          workspaceRoots.push(dep.path);
+        }
+      }
+    }
+
+    options.roots = workspaceRoots;
+  } else if (options.allWorkspaces && monorepoConfig) {
+    // Handle --all-workspaces
+    log(`📦 Scanning all ${monorepoConfig.workspaces.length} workspaces...`);
+    options.roots = monorepoConfig.workspaces.map(ws => ws.path);
+  } else if (workspaceName && !monorepoConfig) {
+    console.error('No monorepo configuration detected. Cannot resolve workspace.');
+    process.exit(1);
+  }
 
   // Progress display for scanning feedback (only when stderr is a TTY)
   let lastProgressLine = '';
@@ -265,12 +347,29 @@ async function main() {
       const analysisResults = await packer.analyzeForInteractive(tempResult.matchedFiles);
       clearProgress();
 
-      const fileChoices: FileChoice[] = analysisResults.map(r => ({
-        path: r.path,
-        relPath: r.relPath,
-        tokens: r.tokens,
-        ext: r.ext,
-      }));
+      // Add workspace info to file choices if in monorepo
+      const fileChoices: FileChoice[] = analysisResults.map(r => {
+        const choice: FileChoice = {
+          path: r.path,
+          relPath: r.relPath,
+          tokens: r.tokens,
+          ext: r.ext,
+        };
+        if (monorepoConfig) {
+          const ws = monorepoConfig.workspaces.find(w =>
+            r.path.startsWith(w.path + path.sep) || r.path === w.path
+          );
+          if (ws) {
+            choice.workspace = ws.name;
+          }
+        }
+        return choice;
+      });
+
+      // Get workspace names for display
+      const workspaceNames = monorepoConfig
+        ? [...new Set(fileChoices.map(f => f.workspace).filter(Boolean) as string[])]
+        : undefined;
 
       // ---------------------------------------------------------
       // Bundle Selection Dashboard
@@ -347,8 +446,16 @@ async function main() {
       // Parse token limit from CLI
       const tokenLimit = parseTokenLimit(parsed.limit);
 
+      // Build message with workspace info
+      let interactiveMessage = activeBundleName
+        ? `Refine bundle "${activeBundleName}":`
+        : "Select files to bundle:";
+      if (workspaceNames && workspaceNames.length > 0) {
+        interactiveMessage = `${interactiveMessage} (${workspaceNames.length} workspace${workspaceNames.length > 1 ? 's' : ''})`;
+      }
+
       const result = await treeCheckbox({
-        message: activeBundleName ? `Refine bundle "${activeBundleName}":` : "Select files to bundle:",
+        message: interactiveMessage,
         files: fileChoices,
         pageSize: 20,
         showPreview: true,
@@ -358,6 +465,7 @@ async function main() {
         initialSelectedIndices,
         gitStatusMap,
         tokenLimit,
+        workspaceNames,
       });
 
       const selected = result.selectedPaths;

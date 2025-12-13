@@ -86,6 +86,13 @@ export type Argv = {
   // Token budget
   limit?: string;                  // --limit (token budget for progress bar)
 
+  // Workspace/Monorepo support
+  workspace?: string;              // -W, --workspace (select specific workspace)
+  W?: string;                      // alias
+  workspaces?: boolean;            // --workspaces (list all workspaces)
+  "all-workspaces"?: boolean;      // --all-workspaces (include all workspaces)
+  "follow-workspace-deps"?: boolean; // --follow-workspace-deps (include workspace dependencies)
+
   // Legacy mappings
   extensions?: string | string[];
   e?: string | string[];           // alias
@@ -185,6 +192,7 @@ export type FileChoice = {
   relPath: string;   // Relative path for display
   tokens: number;
   ext: string;       // File extension
+  workspace?: string; // Workspace name (for monorepo display)
 };
 
 export type TreeNode = {
@@ -211,6 +219,7 @@ export type TreeCheckboxConfig = {
   initialSelectedIndices?: Set<number>;  // Explicit initial selection (e.g., from a bundle)
   gitStatusMap?: Map<string, 'M' | 'A' | 'D' | '?'>;  // Git status: Modified, Added, Deleted, Untracked
   tokenLimit?: number;  // Token budget limit for progress bar visualization
+  workspaceNames?: string[];  // List of workspace names for grouping (monorepo)
 };
 
 // ============================================================================
@@ -279,6 +288,11 @@ export type PackerOptions = {
 
   // Progress callback for UX feedback
   onProgress?: ProgressCallback;
+
+  // Workspace/Monorepo support
+  workspace?: string;              // Specific workspace to scan
+  allWorkspaces?: boolean;         // Include all workspaces
+  followWorkspaceDeps?: boolean;   // Include workspace dependencies
 };
 
 // ============================================================================

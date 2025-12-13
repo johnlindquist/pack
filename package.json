@@ -31,7 +31,8 @@
     "pack": "dist/index.js"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir dist --target node --format esm",
+    "build": "bun build ./src/index.ts --outdir dist --target node --format esm --minify",
+    "bundle:llm": "bun build ./src/index.ts --outfile llm-bundle.js --target node --format esm --minify --external '@inquirer/prompts' --external chokidar --external cli-highlight --external fzf --external glob --external ignore --external js-tiktoken --external minimatch --external p-limit --external tree-sitter-wasms --external web-tree-sitter --external yargs",
     "test": "bun test",
     "test:e2e": "bun test test/e2e/",
     "test:watch": "bun test --watch",
@@ -62,6 +63,7 @@
     "p-limit": "^7.2.0",
     "tree-sitter-wasms": "^0.1.13",
     "web-tree-sitter": "^0.25.10",
+    "yaml": "^2.8.2",
     "yargs": "^18.0.0"
   },
   "devDependencies": {

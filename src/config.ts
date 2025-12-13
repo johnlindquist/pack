@@ -278,6 +278,9 @@ export async function resolveConfig(argv: string[]): Promise<{
     usePackignore,
     explainMode: Boolean(parsed.explain),
     verbose: Boolean(parsed.verbose),
+    workspace: (parsed.workspace ?? parsed.W) as string | undefined,
+    allWorkspaces: Boolean(parsed["all-workspaces"]),
+    followWorkspaceDeps: Boolean(parsed["follow-workspace-deps"]),
   };
 
   return { options, parsed, shouldExit: null };
@@ -318,5 +321,8 @@ function createDefaultOptions(): PackerOptions {
     usePackignore: true,
     explainMode: false,
     verbose: false,
+    workspace: undefined,
+    allWorkspaces: false,
+    followWorkspaceDeps: false,
   };
 }

@@ -204,10 +204,32 @@ export function parseArgs(args: string[]): Argv {
 
     // Watch mode
     .option('watch', {
-      alias: 'w',
       type: 'boolean',
       description: 'Watch for file changes and auto-update output',
       group: 'Watch Mode:',
+    })
+
+    // Workspace/Monorepo support
+    .option('workspace', {
+      alias: 'W',
+      type: 'string',
+      description: 'Select specific workspace (e.g., @myorg/ui)',
+      group: 'Workspaces:',
+    })
+    .option('workspaces', {
+      type: 'boolean',
+      description: 'List all detected workspaces',
+      group: 'Workspaces:',
+    })
+    .option('all-workspaces', {
+      type: 'boolean',
+      description: 'Include all workspaces in scan',
+      group: 'Workspaces:',
+    })
+    .option('follow-workspace-deps', {
+      type: 'boolean',
+      description: 'Include workspace dependencies',
+      group: 'Workspaces:',
     })
 
     // Other options
@@ -339,6 +361,13 @@ export function printHelp(): void {
 
 \x1b[1mWATCH MODE\x1b[0m
   -w, --watch              Watch for file changes and auto-update output
+
+\x1b[1mWORKSPACES\x1b[0m
+  -W, --workspace <name>   Select specific workspace (e.g., @myorg/ui)
+      --workspaces         List all detected workspaces
+      --all-workspaces     Include all workspaces in scan
+      --follow-workspace-deps  Include workspace dependencies
+                           Supports: pnpm, npm/yarn, lerna, nx, turbo
 
 \x1b[1mOTHER\x1b[0m
       --no-cache           Disable caching (force fresh analysis)
