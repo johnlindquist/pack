@@ -150,6 +150,39 @@ async function main() {
     process.exit(0);
   }
 
+  // Handle --deps flag (show dependency tree for a file)
+  if (parsed.deps) {
+    const { buildDependencyGraph, renderDependencyTreeCLI } = await import("./ui/dependency-tree.js");
+
+    const targetFile = path.resolve(parsed.deps);
+
+    // Check if file exists
+    try {
+      await fs.access(targetFile);
+    } catch {
+      console.error(`Error: File not found: ${targetFile}`);
+      process.exit(1);
+    }
+
+    console.log(`Building dependency graph for: ${path.relative(process.cwd(), targetFile)}\n`);
+
+    // Build graph with project files for reverse dependency detection
+    const Packer = (await import("./packer.js")).Packer;
+    const tempPacker = new Packer({ ...options, interactive: false, usePackignore: false });
+    const tempResult = await tempPacker.pack();
+    const allFiles = tempResult.matchedFiles;
+
+    const graph = await buildDependencyGraph(targetFile, {
+      maxDepth: 2,
+      projectRoot: process.cwd(),
+      allFiles,
+    });
+
+    // Output the tree
+    console.log(renderDependencyTreeCLI(graph));
+    process.exit(0);
+  }
+
   const log = (msg: string) => (options.toStdout ? console.error(msg) : console.log(msg));
 
   // =========================================================================

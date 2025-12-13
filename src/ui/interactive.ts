@@ -14,6 +14,7 @@ import { highlight, supportsLanguage } from 'cli-highlight';
 import { formatTokenCount } from "../analysis.js";
 import { extractContextWindows, formatContextWindows } from "../context.js";
 import { extractDependencies } from "../dependencies.js";
+import { buildDependencyGraph, renderDependencyTree, getAllGraphFiles, type DependencyGraph } from "./dependency-tree.js";
 import type { FileChoice, TreeNode, TreeCheckboxConfig } from "../types.js";
 
 // Result type that includes selection and optional glob pattern
@@ -344,6 +345,13 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   const [isSemanticSearching, setIsSemanticSearching] = useState<boolean>(false);
   const [semanticMessage, setSemanticMessage] = useState<string>('');
 
+  // Dependency tree view state
+  const [showDepTree, setShowDepTree] = useState<boolean>(false);
+  const [depGraph, setDepGraph] = useState<DependencyGraph | null>(null);
+  const [depTreeCursor, setDepTreeCursor] = useState<number>(0);
+  const [depTreeLoading, setDepTreeLoading] = useState<boolean>(false);
+  const [depTreeSelected, setDepTreeSelected] = useState<Set<string>>(new Set());
+
   // Terminal dimensions (reactive to resize)
   const [terminalSize, setTerminalSize] = useState(getTerminalDimensions);
 
@@ -588,6 +596,88 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     // When help is shown, any key dismisses it
     if (showHelp) {
       setShowHelp(false);
+      return;
+    }
+
+    // Dependency tree view key handling
+    if (showDepTree) {
+      if (key.name === 'escape') {
+        // Close dependency tree view
+        setShowDepTree(false);
+        setDepGraph(null);
+        setDepTreeSelected(new Set());
+        return;
+      }
+
+      if (depGraph && !depTreeLoading) {
+        const graphFiles = getAllGraphFiles(depGraph);
+
+        if (isEnterKey(key)) {
+          // Add all selected files from dep tree to main selection
+          const filesToAdd = depTreeSelected.size > 0
+            ? [...depTreeSelected]
+            : graphFiles.all;
+
+          const next = new Set(selected);
+          for (const filePath of filesToAdd) {
+            // Find file index in files array
+            const idx = files.findIndex(f => f.path === filePath);
+            if (idx !== -1) {
+              next.add(idx);
+            }
+          }
+          setSelected(next);
+          setDepMessage(`Added ${filesToAdd.length} files from dependency tree`);
+          setShowDepTree(false);
+          setDepGraph(null);
+          setDepTreeSelected(new Set());
+          return;
+        }
+
+        if (key.name === 'a') {
+          // Add all imports to main selection
+          const next = new Set(selected);
+          for (const filePath of graphFiles.imports) {
+            const idx = files.findIndex(f => f.path === filePath);
+            if (idx !== -1) {
+              next.add(idx);
+            }
+          }
+          setSelected(next);
+          setDepMessage(`Added ${graphFiles.imports.length} imported files`);
+          setShowDepTree(false);
+          setDepGraph(null);
+          return;
+        }
+
+        if (key.name === 'r') {
+          // Add all reverse dependencies to main selection
+          const next = new Set(selected);
+          for (const filePath of graphFiles.importedBy) {
+            const idx = files.findIndex(f => f.path === filePath);
+            if (idx !== -1) {
+              next.add(idx);
+            }
+          }
+          setSelected(next);
+          setDepMessage(`Added ${graphFiles.importedBy.length} reverse dependencies`);
+          setShowDepTree(false);
+          setDepGraph(null);
+          return;
+        }
+
+        if (isSpaceKey(key)) {
+          // Toggle selection of all files in the tree
+          const allFiles = graphFiles.all;
+          const allSelected = allFiles.every(f => depTreeSelected.has(f));
+          if (allSelected) {
+            setDepTreeSelected(new Set());
+          } else {
+            setDepTreeSelected(new Set(allFiles));
+          }
+          return;
+        }
+      }
       return;
     }
 
@@ -941,37 +1031,33 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       setFilterText('');
       setCursor(0);
     } else if (key.name === 'd' && !previewFocused) {
-      // Resolve dependencies for current file
+      // Show dependency tree for current file
       const node = flatNodes[cursor];
       if (node && !node.isFolder && node.fileIndices.length > 0) {
         const fileIdx = node.fileIndices[0];
         const filePath = files[fileIdx].path;
 
+        // Show loading state and build dependency graph
+        setDepTreeLoading(true);
+        setShowDepTree(true);
+        setDepTreeCursor(0);
+        setDepTreeSelected(new Set());
+
         // Use async IIFE since useKeypress callback is sync
         (async () => {
-          const deps = await extractDependencies(filePath);
-          if (deps.length === 0) {
-            setDepMessage('No local dependencies found');
-            return;
-          }
-
-          // Find indices of dependencies in our file list
-          const depPaths = new Set(deps.map(d => d.resolvedPath));
-          const matchedIndices: number[] = [];
-
-          for (let i = 0; i < files.length; i++) {
-            if (depPaths.has(files[i].path)) {
-              matchedIndices.push(i);
-            }
-          }
-
-          if (matchedIndices.length > 0) {
-            const next = new Set(selected);
-            matchedIndices.forEach(i => next.add(i));
-            setSelected(next);
-            setDepMessage(`Selected ${matchedIndices.length} dependencies`);
-          } else {
-            setDepMessage('Dependencies not in file list');
+          try {
+            const allFilePaths = files.map(f => f.path);
+            const graph = await buildDependencyGraph(filePath, {
+              maxDepth: 2,
+              projectRoot: process.cwd(),
+              allFiles: allFilePaths,
+            });
+            setDepGraph(graph);
+          } catch (err) {
+            setDepMessage('Failed to build dependency graph');
+            setShowDepTree(false);
+          } finally {
+            setDepTreeLoading(false);
           }
         })();
       }
@@ -1046,7 +1132,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 │  Features                                                    │
 │    /            Search/filter files (fuzzy or glob)          │
 │    /@query      Semantic search (natural language)           │
-│    d            Select dependencies of current file          │
+│    d            Show dependency tree for current file        │
 │    x            Banish to .packignore                        │
 │    o            Open file in editor                          │
 │    e            Extension filter mode                        │
@@ -1063,6 +1149,34 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
 \x1b[90mPress any key to close\x1b[0m`;
     return helpContent;
+  }
+
+  // Render dependency tree view when showDepTree is true
+  if (showDepTree) {
+    const hideCursor = '\x1b[?25l';
+
+    if (depTreeLoading) {
+      return `${hideCursor}\x1b[33mBuilding dependency graph...\x1b[0m`;
+    }
+
+    if (!depGraph) {
+      return `${hideCursor}\x1b[31mFailed to build dependency graph\x1b[0m\n\x1b[90mPress Esc to close\x1b[0m`;
+    }
+
+    // Render the dependency tree
+    const treeLines = renderDependencyTree(depGraph, {
+      showImports: true,
+      showImportedBy: true,
+      maxWidth: terminalSize.width - 4,
+    });
+
+    // Show selection state
+    const graphFiles = getAllGraphFiles(depGraph);
+    const selectionInfo = depTreeSelected.size > 0
+      ? `\x1b[33m${depTreeSelected.size} files selected\x1b[0m`
+      : `\x1b[90m${graphFiles.all.length} files available\x1b[0m`;
+
+    return `${hideCursor}${treeLines.join('\n')}\n\n${selectionInfo}`;
   }
 
   if (showExtensions) {

@@ -140,6 +140,11 @@ export function parseArgs(args: string[]): Argv {
       description: 'Include files imported by matched files',
       group: 'Processing:',
     })
+    .option('deps', {
+      type: 'string',
+      description: 'Show dependency tree for a file (non-interactive)',
+      group: 'Processing:',
+    })
     .option('instruction', {
       type: 'string',
       description: 'Prepend custom instructions from file',
@@ -368,6 +373,7 @@ export function printHelp(): void {
   -l, --lines <num>        Extract N lines of context around matches
   -r, --related            Include related files (tests, stories)
       --follow-imports     Include files imported by matched files
+      --deps <file>        Show dependency tree for a file (non-interactive)
       --instruction <file> Prepend custom instructions
 
 \x1b[1mOUTPUT\x1b[0m

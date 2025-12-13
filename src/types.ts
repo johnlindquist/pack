@@ -56,6 +56,7 @@ export type Argv = {
   related?: boolean;               // -r
   r?: boolean;                     // alias
   "follow-imports"?: boolean;      // --follow-imports
+  deps?: string;                   // --deps (show dependency tree for a file)
 
   // Instructions
   instruction?: string;
