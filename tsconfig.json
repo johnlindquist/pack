@@ -6,7 +6,9 @@
     "strict": true,
     "skipLibCheck": true,
     "types": ["node", "bun"],
-    "outDir": "dist"
+    "outDir": "dist",
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
   },
   "include": ["src"]
 }
