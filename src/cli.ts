@@ -87,6 +87,11 @@ export function parseArgs(args: string[]): Argv {
     })
 
     // Processing options
+    .option('skeleton', {
+      type: 'boolean',
+      description: 'Extract only interface/signatures (remove function bodies)',
+      group: 'Processing:',
+    })
     .option('strip-comments', {
       type: 'boolean',
       description: 'Strip comments from code',
@@ -325,6 +330,7 @@ export function printHelp(): void {
       --no-packignore      Ignore .packignore file
 
 \x1b[1mPROCESSING\x1b[0m
+      --skeleton           Extract only interface/signatures (remove function bodies)
       --strip-comments     Strip comments from code
       --no-comments        Alias for --strip-comments
       --minify             Remove empty lines and whitespace

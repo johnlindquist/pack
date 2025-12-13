@@ -1,9 +1,13 @@
 /**
- * Content processing utilities: comment stripping, minification, and transforms
+ * Content processing utilities: comment stripping, minification, skeleton extraction, and transforms
  */
 
 import { stripCommentsAST, isASTSupported } from "./ast.js";
+import { extractSkeleton, isSkeletonSupported } from "./skeleton.js";
 import type { TransformRule } from "./types.js";
+
+// Re-export skeleton functions for convenience
+export { extractSkeleton, isSkeletonSupported } from "./skeleton.js";
 
 /**
  * Strip comments from code based on file extension

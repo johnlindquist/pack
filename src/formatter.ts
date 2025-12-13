@@ -7,7 +7,7 @@ import * as path from "node:path";
 import { Writable } from "node:stream";
 import { extractContextWindows, formatContextWindows } from "./context.js";
 import { countTokens } from "./analysis.js";
-import { stripComments, minify, applyTransforms } from "./processing.js";
+import { stripComments, minify, applyTransforms, extractSkeleton } from "./processing.js";
 import type { OutputStyle, FormatOptions, FileStats, JsonlFileEntry, MatchPosition } from "./types.js";
 
 // Re-export types for convenience
@@ -86,9 +86,13 @@ export async function formatFile(
   const ext = path.extname(relPath);
   const extLabel = ext.slice(1) || 'txt';
 
-  // Apply processing: transforms first (for redaction), then comments/minify
+  // Apply processing: transforms first (for redaction), then skeleton, comments, minify
   if (options.transforms && options.transforms.length > 0) {
     content = applyTransforms(content, options.transforms);
+  }
+  if (options.skeleton) {
+    const { result } = await extractSkeleton(content, ext);
+    content = result;
   }
   if (options.stripComments) {
     content = await stripComments(content, ext);
@@ -356,8 +360,12 @@ export async function formatFileAsJsonl(
   let content = await fs.readFile(filePath, 'utf8');
 
   // Apply processing
+  const ext = path.extname(relPath);
+  if (options.skeleton) {
+    const { result } = await extractSkeleton(content, ext);
+    content = result;
+  }
   if (options.stripComments) {
-    const ext = path.extname(relPath);
     content = await stripComments(content, ext);
   }
   if (options.minify) {

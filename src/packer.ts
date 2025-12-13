@@ -17,7 +17,7 @@ import { loadGitignore, loadPackignore, DEFAULT_IGNORE_PATTERNS, expandWithRelat
 import { expandWithDependencies } from "./dependencies.js";
 import { isBinaryFile, countTokens, analyzeFile } from "./analysis.js";
 import { extractContextWindows, formatContextWindows } from "./context.js";
-import { stripComments, minify, applyTransforms } from "./processing.js";
+import { stripComments, minify, applyTransforms, extractSkeleton } from "./processing.js";
 import { createHeader, createFooter, formatAsJsonl, findAllMatches, type OutputStyle } from "./formatter.js";
 import { isRipgrepAvailable, discoverFilesWithRipgrep, ripgrepExcludeContent } from "./ripgrep.js";
 import { CacheManager, createCacheManager } from "./cache.js";
@@ -498,9 +498,13 @@ export class Packer {
             const ext = path.extname(relPath);
             const extLabel = ext.slice(1) || 'txt';
 
-            // Apply processing: transforms first (for redaction), then comments/minify
+            // Apply processing: transforms first (for redaction), then skeleton, comments, minify
             if (options.transforms && options.transforms.length > 0) {
               content = applyTransforms(content, options.transforms);
+            }
+            if (options.skeleton) {
+              const { result } = await extractSkeleton(content, ext);
+              content = result;
             }
             if (options.stripComments) {
               content = await stripComments(content, ext);

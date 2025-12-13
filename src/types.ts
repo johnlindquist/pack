@@ -46,6 +46,7 @@ export type Argv = {
   M?: number;                      // alias
 
   // Processing
+  skeleton?: boolean;              // --skeleton
   "strip-comments"?: boolean;      // --strip-comments
   "no-comments"?: boolean;         // --no-comments (alias)
   minify?: boolean;                // --minify
@@ -145,6 +146,7 @@ export type FormatOptions = {
   pattern?: RegExp | null;
   smartContext?: boolean;
   summaryOnly?: boolean;
+  skeleton?: boolean;
   stripComments?: boolean;
   minify?: boolean;
   transforms?: TransformRule[];
@@ -246,6 +248,7 @@ export type PackerOptions = {
   gitMode: 'staged' | 'diff' | 'dirty' | null;
 
   // Processing
+  skeleton: boolean;
   stripComments: boolean;
   minify: boolean;
   contextLines?: number;
