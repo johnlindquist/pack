@@ -62,7 +62,13 @@ export type Argv = {
   instruction?: string;
   prompt?: string | string[];      // -p
   p?: string | string[];           // alias
-  template?: string;
+
+  // Templates
+  template?: string;               // -t
+  t?: string;                      // alias
+  "list-templates"?: boolean;      // --list-templates
+  "save-template"?: string;        // --save-template
+  var?: string | string[];         // --var (template variables)
 
   // Meta
   interactive?: boolean;           // -I

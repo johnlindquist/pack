@@ -35,6 +35,7 @@ import {
   type MonorepoConfig,
   type Workspace,
 } from "./workspaces.js";
+import { listTemplates, applyTemplate, saveTemplate, formatTemplateList } from "./templates.js";
 import type { ProgressEvent } from "./types.js";
 import { formatRedactionReport, type RedactionReport } from "./secrets.js";
 
@@ -297,6 +298,60 @@ async function main() {
     process.exit(0);
   }
 
+  // Handle --list-templates
+  if (parsed["list-templates"]) {
+    const templates = await listTemplates(process.cwd());
+    console.log(formatTemplateList(templates));
+    process.exit(0);
+  }
+
+  // Handle --save-template
+  if (parsed["save-template"]) {
+    const templateName = parsed["save-template"];
+    const promptText = options.promptText;
+    if (!promptText) {
+      console.error("Error: --save-template requires --prompt to specify template content");
+      process.exit(1);
+    }
+    const savedPath = await saveTemplate(templateName, promptText, {
+      description: `Custom template: ${templateName}`,
+      cwd: process.cwd(),
+    });
+    console.log(`Template saved to: ${savedPath}`);
+    process.exit(0);
+  }
+
+  // Handle --template: apply template to promptText
+  const templateName = parsed.template || parsed.t;
+  if (templateName) {
+    // Parse --var options
+    const varArgs = parsed.var;
+    const vars: Record<string, string> = {};
+    if (varArgs) {
+      const varList = Array.isArray(varArgs) ? varArgs : [varArgs];
+      for (const v of varList) {
+        const eqIdx = v.indexOf('=');
+        if (eqIdx > 0) {
+          const key = v.slice(0, eqIdx);
+          const value = v.slice(eqIdx + 1);
+          vars[key] = value;
+        }
+      }
+    }
+
+    try {
+      const templateContent = await applyTemplate(templateName, vars, process.cwd());
+      // Combine template with any existing prompt
+      if (options.promptText) {
+        options.promptText = templateContent + '\n\n' + options.promptText;
+      } else {
+        options.promptText = templateContent;
+      }
+    } catch (err: any) {
+      console.error(`Error loading template "${templateName}": ${err.message}`);
+      process.exit(1);
+    }
+  }
 
   // Progress display for scanning feedback (only when stderr is a TTY)
   let lastProgressLine = '';

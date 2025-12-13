@@ -270,16 +270,34 @@ export function parseArgs(args: string[]): Argv {
       group: 'Workspaces:',
     })
 
+    // Template options
+    .option('template', {
+      alias: 't',
+      type: 'string',
+      description: 'Use a prompt template by name',
+      group: 'Templates:',
+    })
+    .option('list-templates', {
+      type: 'boolean',
+      description: 'List available templates',
+      group: 'Templates:',
+    })
+    .option('save-template', {
+      type: 'string',
+      description: 'Save current prompt as a template',
+      group: 'Templates:',
+    })
+    .option('var', {
+      type: 'string',
+      description: 'Set template variable (key=value)',
+      group: 'Templates:',
+    })
+
     // Other options
     .option('prompt', {
       alias: 'p',
       type: 'string',
       description: 'Prompt text to prepend',
-      group: 'Other:',
-    })
-    .option('template', {
-      type: 'string',
-      description: 'Template for prompt',
       group: 'Other:',
     })
     .option('no-cache', {
@@ -397,6 +415,13 @@ export function printHelp(): void {
                            • With -l, shows context windows around matches
       --limit <size>       Token budget limit with visual progress bar
                            Examples: 8k, 32k, 128K (k=1000, K=1024)
+
+\x1b[1mTEMPLATES\x1b[0m
+  -t, --template <name>    Use a prompt template (e.g., review, tests, bugs)
+      --list-templates     List all available templates
+      --save-template <n>  Save current --prompt as a template with name <n>
+      --var key=value      Set template variable (can be used multiple times)
+                           Example: --template tests --var framework=vitest
 
 \x1b[1mBUNDLES\x1b[0m
   -b, --bundle <name>      Load a saved bundle by name (from .pack/bundles/)
