@@ -223,6 +223,18 @@ export function parseArgs(args: string[]): Argv {
       group: 'Interactive Mode:',
     })
 
+    // Semantic search
+    .option('semantic', {
+      type: 'string',
+      description: 'Natural language search query (uses local embeddings)',
+      group: 'Semantic Search:',
+    })
+    .option('build-index', {
+      type: 'boolean',
+      description: 'Pre-build embeddings cache for faster semantic search',
+      group: 'Semantic Search:',
+    })
+
     // Watch mode
     .option('watch', {
       type: 'boolean',
@@ -383,6 +395,10 @@ export function printHelp(): void {
 \x1b[1mBUNDLES\x1b[0m
   -b, --bundle <name>      Load a saved bundle by name (from .pack/bundles/)
                            Skips interactive mode and outputs directly
+
+\x1b[1mSEMANTIC SEARCH\x1b[0m
+      --semantic <query>   Natural language search (e.g., "authentication logic")
+      --build-index        Pre-build embeddings cache for faster searches
 
 \x1b[1mWATCH MODE\x1b[0m
   -w, --watch              Watch for file changes and auto-update output

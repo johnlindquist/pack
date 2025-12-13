@@ -235,6 +235,36 @@ async function main() {
     process.exit(1);
   }
 
+  // Handle --build-index (pre-build embeddings cache)
+  if (options.buildIndex) {
+    const { createEmbeddingsManager } = await import("./embeddings-manager.js");
+    const embeddingsManager = createEmbeddingsManager(options.roots[0] || ".");
+    await embeddingsManager.load();
+
+    log("Building embeddings index...");
+
+    // Get all candidate files
+    const tempPacker = new Packer({ ...options, interactive: false });
+    const tempResult = await tempPacker.pack();
+
+    if (tempResult.matchedFiles.length === 0) {
+      console.warn("No files found to index.");
+      process.exit(2);
+    }
+
+    await embeddingsManager.buildIndex(tempResult.matchedFiles, (current, total, file) => {
+      const pct = Math.round((current / total) * 100);
+      process.stderr.write(`\r[${pct}%] ${current}/${total} - ${file.slice(-50).padStart(50)}`);
+    });
+
+    process.stderr.write("\n");
+    const stats = embeddingsManager.getStats();
+    log(`Embeddings index built: ${stats.entryCount} files cached`);
+    log(`Cache location: ${stats.cacheFile}`);
+    process.exit(0);
+  }
+
+
   // Progress display for scanning feedback (only when stderr is a TTY)
   let lastProgressLine = '';
   const isTTY = process.stderr.isTTY;
@@ -258,6 +288,49 @@ async function main() {
 
   // Create packer with progress callback
   const packer = new Packer({ ...options, onProgress: showProgress });
+
+  // Handle --semantic flag (semantic search with embeddings)
+  if (options.semanticQuery) {
+    const { createEmbeddingsManager } = await import("./embeddings-manager.js");
+    const embeddingsManager = createEmbeddingsManager(options.roots[0] || ".");
+    await embeddingsManager.load();
+
+    log(`Semantic search: "${options.semanticQuery}"`);
+
+    // Get all candidate files first
+    const tempPacker = new Packer({ ...options, interactive: false, onProgress: showProgress });
+    const tempResult = await tempPacker.pack();
+    clearProgress();
+
+    if (tempResult.matchedFiles.length === 0) {
+      console.warn("No files found to search.");
+      process.exit(2);
+    }
+
+    log(`Searching ${tempResult.matchedFiles.length} files...`);
+    const results = await embeddingsManager.search(options.semanticQuery, tempResult.matchedFiles, 20, 0.3);
+    await embeddingsManager.save();
+
+    if (results.length === 0) {
+      console.warn("No matching files found for the query.");
+      process.exit(3);
+    }
+
+    log(`\nFound ${results.length} relevant files:\n`);
+    for (const result of results) {
+      const score = (result.score * 100).toFixed(1);
+      log(`  ${score}% - ${result.relPath}`);
+    }
+
+    // Use top results as explicit files for packing
+    const selectedFiles = results.map(r => r.filePath);
+    const selectedOptions = { ...options, explicitFiles: selectedFiles, interactive: false, semanticQuery: undefined };
+    const finalPacker = new Packer(selectedOptions);
+    const packResult = await finalPacker.pack();
+
+    await handleOutput(packResult, options, log);
+    process.exit(0);
+  }
 
   // Handle --bundle flag (non-interactive bundle loading)
   const bundleName = parsed.bundle;
@@ -466,6 +539,22 @@ async function main() {
         interactiveMessage = `${interactiveMessage} (${workspaceNames.length} workspace${workspaceNames.length > 1 ? 's' : ''})`;
       }
 
+      // Create semantic search callback for interactive mode
+      let semanticSearchCallback: ((query: string) => Promise<Array<{ path: string; score: number }>>) | undefined;
+      try {
+        const { createEmbeddingsManager } = await import("./embeddings-manager.js");
+        const embeddingsManager = createEmbeddingsManager(options.roots[0] || ".");
+        await embeddingsManager.load();
+        const allFilePaths = fileChoices.map(f => f.path);
+        semanticSearchCallback = async (query: string) => {
+          const results = await embeddingsManager.search(query, allFilePaths, 20, 0.3);
+          await embeddingsManager.save();
+          return results.map(r => ({ path: r.filePath, score: r.score }));
+        };
+      } catch {
+        // Semantic search not available
+      }
+
       const result = await treeCheckbox({
         message: interactiveMessage,
         files: fileChoices,
@@ -478,6 +567,7 @@ async function main() {
         gitStatusMap,
         tokenLimit,
         workspaceNames,
+        onSemanticSearch: semanticSearchCallback,
       });
 
       const selected = result.selectedPaths;

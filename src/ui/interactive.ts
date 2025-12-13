@@ -283,7 +283,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     packignoreIndices = new Set<number>(),
     initialSelectedIndices,
     gitStatusMap,
-    tokenLimit
+    tokenLimit,
+    onSemanticSearch,
   } = config;
 
   // OPTIMIZATION #1: Memoize tree construction (static for the prompt lifetime)
@@ -338,6 +339,11 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   // Help overlay state
   const [showHelp, setShowHelp] = useState<boolean>(false);
 
+  // Semantic search state
+  const [semanticResults, setSemanticResults] = useState<Map<string, number>>(new Map());
+  const [isSemanticSearching, setIsSemanticSearching] = useState<boolean>(false);
+  const [semanticMessage, setSemanticMessage] = useState<string>('');
+
   // Terminal dimensions (reactive to resize)
   const [terminalSize, setTerminalSize] = useState(getTerminalDimensions);
 
@@ -367,6 +373,14 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       return () => clearTimeout(timer);
     }
   }, [banishMessage]);
+
+  // Clear semantic message after 3 seconds
+  useEffect(() => {
+    if (semanticMessage) {
+      const timer = setTimeout(() => setSemanticMessage(''), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [semanticMessage]);
 
   // OPTIMIZATION #6: Memoize flattened nodes
   // Recalculates ONLY when collapse state or filter changes
@@ -403,28 +417,45 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
     // Apply filter if active
     if (filterText) {
-      const hasGlobChars = /[\*\?\[\]\{\}!]/.test(filterText);
-      // OPTIMIZATION #8: Create matcher once outside loop
-      if (hasGlobChars) {
-        // Use glob matching for patterns like *.ts
-        try {
-          const mm = new Minimatch(filterText, { nocase: true, matchBase: true });
-          nodes = nodes.filter(node => mm.match(node.path) || mm.match(node.name));
-        } catch {
-          const lowerFilter = filterText.toLowerCase();
-          nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
-        }
-      } else {
-        // Use fuzzy matching for plain text (e.g., "srcint" matches "src/ui/interactive.ts")
-        const fzf = new Fzf(nodes, {
-          selector: (node: TreeNode) => node.path,
+      // Check for semantic search prefix (@)
+      if (filterText.startsWith('@') && semanticResults.size > 0) {
+        // Filter and sort by semantic search results
+        const matchedPaths = new Set(semanticResults.keys());
+        nodes = nodes.filter(node => {
+          if (node.isFolder) return false;
+          const filePath = files[node.fileIndices[0]]?.path;
+          return filePath && matchedPaths.has(filePath);
         });
-        const results = fzf.find(filterText);
-        nodes = results.map(r => r.item);
+        // Sort by score
+        nodes.sort((a, b) => {
+          const pathA = files[a.fileIndices[0]]?.path || '';
+          const pathB = files[b.fileIndices[0]]?.path || '';
+          return (semanticResults.get(pathB) || 0) - (semanticResults.get(pathA) || 0);
+        });
+      } else {
+        const hasGlobChars = /[\*\?\[\]\{\}!]/.test(filterText);
+        // OPTIMIZATION #8: Create matcher once outside loop
+        if (hasGlobChars) {
+          // Use glob matching for patterns like *.ts
+          try {
+            const mm = new Minimatch(filterText, { nocase: true, matchBase: true });
+            nodes = nodes.filter(node => mm.match(node.path) || mm.match(node.name));
+          } catch {
+            const lowerFilter = filterText.toLowerCase();
+            nodes = nodes.filter(node => node.path.toLowerCase().includes(lowerFilter));
+          }
+        } else {
+          // Use fuzzy matching for plain text (e.g., "srcint" matches "src/ui/interactive.ts")
+          const fzf = new Fzf(nodes, {
+            selector: (node: TreeNode) => node.path,
+          });
+          const results = fzf.find(filterText);
+          nodes = results.map(r => r.item);
+        }
       }
     }
     return nodes;
-  }, [tree, collapsed, filterText, banished]);
+  }, [tree, collapsed, filterText, banished, semanticResults, files]);
 
   // Clamp cursor when filtered results change (prevent out-of-bounds)
   useEffect(() => {
@@ -562,6 +593,30 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 
     if (isEnterKey(key)) {
       if (isFiltering) {
+        // Check if this is a semantic search query (@query)
+        if (filterText.startsWith('@') && onSemanticSearch && filterText.length > 1) {
+          const query = filterText.slice(1).trim();
+          if (query) {
+            setIsSemanticSearching(true);
+            setSemanticMessage('Searching...');
+            (async () => {
+              try {
+                const results = await onSemanticSearch(query);
+                const resultMap = new Map<string, number>();
+                for (const r of results) {
+                  resultMap.set(r.path, r.score);
+                }
+                setSemanticResults(resultMap);
+                setSemanticMessage(`Found ${results.length} relevant files`);
+              } catch (err) {
+                setSemanticMessage('Semantic search failed');
+                setSemanticResults(new Map());
+              } finally {
+                setIsSemanticSearching(false);
+              }
+            })();
+          }
+        }
         setIsFiltering(false);
         setCursor(0);
         return;
@@ -989,7 +1044,8 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
 │    a            Toggle all visible                           │
 ├──────────────────────────────────────────────────────────────┤
 │  Features                                                    │
-│    /            Search/filter files                          │
+│    /            Search/filter files (fuzzy or glob)          │
+│    /@query      Semantic search (natural language)           │
 │    d            Select dependencies of current file          │
 │    x            Banish to .packignore                        │
 │    o            Open file in editor                          │
@@ -1117,6 +1173,7 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
   // Show filter input or help line
   let filterLine = '';
   const hasGlobChars = /[\*\?\[\]\{\}!]/.test(filterText);
+  const isSemanticQuery = filterText.startsWith('@');
   if (isFiltering) {
     // Show cursor in filter text
     const beforeCursor = filterText.slice(0, filterCursor);
@@ -1124,11 +1181,18 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     const cursorChar = afterCursor.length > 0 ? afterCursor[0] : ' ';
     const restAfterCursor = afterCursor.slice(1);
     const filterDisplay = `${beforeCursor}\x1b[7m${cursorChar}\x1b[0m\x1b[33m${restAfterCursor}`;
-    const modeHint = hasGlobChars ? ' (glob)' : ' (fuzzy)';
-    filterLine = `\x1b[33m🔍 Filter${modeHint}: ${filterDisplay}\x1b[0m  \x1b[90m(←→ move, enter apply, esc cancel, supports *.ts globs)\x1b[0m`;
+    const modeHint = isSemanticQuery ? ' (semantic)' : (hasGlobChars ? ' (glob)' : ' (fuzzy)');
+    const hint = isSemanticQuery
+      ? '(enter to search, @query for semantic search)'
+      : '(←→ move, enter apply, esc cancel, @query for semantic)';
+    filterLine = `\x1b[33m🔍 Filter${modeHint}: ${filterDisplay}\x1b[0m  \x1b[90m${hint}\x1b[0m`;
   } else if (filterText) {
-    const modeHint = hasGlobChars ? ' (glob)' : ' (fuzzy)';
+    const modeHint = isSemanticQuery ? ' (semantic)' : (hasGlobChars ? ' (glob)' : ' (fuzzy)');
     filterLine = `\x1b[33m🔍 Filter${modeHint}: "${filterText}"\x1b[0m  \x1b[90m(showing ${flatNodes.length} matches, esc clear)\x1b[0m`;
+  }
+  // Add semantic search status
+  if (semanticMessage) {
+    filterLine += `\n\x1b[36m   ${semanticMessage}\x1b[0m`;
   }
 
   if (showPreview) {

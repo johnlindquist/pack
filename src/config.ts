@@ -289,6 +289,8 @@ export async function resolveConfig(argv: string[]): Promise<{
     workspace: (parsed.workspace ?? parsed.W) as string | undefined,
     allWorkspaces: Boolean(parsed["all-workspaces"]),
     followWorkspaceDeps: Boolean(parsed["follow-workspace-deps"]),
+    semanticQuery: parsed.semantic,
+    buildIndex: Boolean(parsed["build-index"]),
   };
 
   return { options, parsed, shouldExit: null };
@@ -335,5 +337,7 @@ function createDefaultOptions(): PackerOptions {
     workspace: undefined,
     allWorkspaces: false,
     followWorkspaceDeps: false,
+    semanticQuery: undefined,
+    buildIndex: false,
   };
 }

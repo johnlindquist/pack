@@ -133,3 +133,22 @@ export {
   type DetectedSecret,
   type RedactionReport
 } from "./secrets.js";
+
+// Re-export from embeddings
+export {
+  embedText,
+  cosineSimilarity,
+  chunkText,
+  extractFileSummary,
+  getEmbeddingPipeline,
+  type FileEmbeddingEntry,
+  type ChunkEmbedding,
+  type EmbeddingsCache,
+  type SemanticSearchResult,
+} from "./embeddings.js";
+
+// Re-export from embeddings-manager
+export {
+  EmbeddingsManager,
+  createEmbeddingsManager,
+} from "./embeddings-manager.js";

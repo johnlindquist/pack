@@ -97,6 +97,10 @@ export type Argv = {
   "all-workspaces"?: boolean;      // --all-workspaces (include all workspaces)
   "follow-workspace-deps"?: boolean; // --follow-workspace-deps (include workspace dependencies)
 
+  // Semantic search
+  semantic?: string;               // --semantic (natural language query)
+  "build-index"?: boolean;         // --build-index (pre-build embeddings cache)
+
   // Legacy mappings
   extensions?: string | string[];
   e?: string | string[];           // alias
@@ -225,6 +229,8 @@ export type TreeCheckboxConfig = {
   gitStatusMap?: Map<string, 'M' | 'A' | 'D' | '?'>;  // Git status: Modified, Added, Deleted, Untracked
   tokenLimit?: number;  // Token budget limit for progress bar visualization
   workspaceNames?: string[];  // List of workspace names for grouping (monorepo)
+  // Semantic search callback (optional)
+  onSemanticSearch?: (query: string) => Promise<Array<{ path: string; score: number }>>;
 };
 
 // ============================================================================
@@ -301,6 +307,10 @@ export type PackerOptions = {
   workspace?: string;              // Specific workspace to scan
   allWorkspaces?: boolean;         // Include all workspaces
   followWorkspaceDeps?: boolean;   // Include workspace dependencies
+
+  // Semantic search
+  semanticQuery?: string;
+  buildIndex?: boolean;
 };
 
 // ============================================================================
