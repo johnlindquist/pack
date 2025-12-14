@@ -1,3 +1,10 @@
+# [4.16.0](https://github.com/johnlindquist/pack/compare/v4.15.1...v4.16.0) (2025-12-14)
+
+
+### Features
+
+* add bundle:llm:stdout script for piping ([a296478](https://github.com/johnlindquist/pack/commit/a2964783349f4b41c7f97514198595cb6fc4b292))
+
 ## [4.15.1](https://github.com/johnlindquist/pack/compare/v4.15.0...v4.15.1) (2025-12-14)
 
 
