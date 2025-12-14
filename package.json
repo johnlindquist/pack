@@ -33,6 +33,7 @@
   "scripts": {
     "build": "bun build ./src/index.ts --outdir dist --target node --format esm --minify",
     "bundle:llm": "bun build ./src/index.ts --outfile llm-bundle.js --target node --format esm --minify --external '@inquirer/prompts' --external '@xenova/transformers' --external chokidar --external cli-highlight --external fzf --external glob --external ignore --external ink --external ink-text-input --external js-tiktoken --external minimatch --external p-limit --external react --external sharp --external tree-sitter-wasms --external web-tree-sitter --external yaml --external yargs",
+    "bundle:llm:stdout": "bun build ./src/index.ts --outfile /tmp/llm-bundle.js --target node --format esm --minify --external '@inquirer/prompts' --external '@xenova/transformers' --external chokidar --external cli-highlight --external fzf --external glob --external ignore --external ink --external ink-text-input --external js-tiktoken --external minimatch --external p-limit --external react --external sharp --external tree-sitter-wasms --external web-tree-sitter --external yaml --external yargs >/dev/null 2>&1 && cat /tmp/llm-bundle.js",
     "test": "bun test",
     "test:e2e": "bun test test/e2e/",
     "test:watch": "bun test --watch",
