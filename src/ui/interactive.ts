@@ -30,7 +30,7 @@ export type { FileChoice, TreeNode, TreeCheckboxConfig } from "../types.js";
 
 // Cache for file contents to avoid repeated reads
 const fileContentCache = new Map<string, string>();
-const MAX_PREVIEW_BYTES = 20 * 1024; // OPTIMIZATION #4: Limit preview read to 20KB
+const DEFAULT_MAX_PREVIEW_BYTES = 20 * 1024; // Default preview size: 20KB
 
 /**
  * Render a visual token budget progress bar
@@ -286,7 +286,11 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
     gitStatusMap,
     tokenLimit,
     onSemanticSearch,
+    previewCacheSize = DEFAULT_MAX_PREVIEW_BYTES,
   } = config;
+
+  // Use configured preview cache size
+  const maxPreviewBytes = previewCacheSize;
 
   // OPTIMIZATION #1: Memoize tree construction (static for the prompt lifetime)
   const { tree } = useMemo(() => buildFileTree(files), [files]);
@@ -542,10 +546,10 @@ export const treeCheckbox = createPrompt<InteractiveResult, TreeCheckboxConfig>(
       try {
         const handle = await fs.open(targetFilePath, 'r');
         try {
-          const buffer = Buffer.alloc(MAX_PREVIEW_BYTES);
-          const { bytesRead } = await handle.read(buffer, 0, MAX_PREVIEW_BYTES, 0);
+          const buffer = Buffer.alloc(maxPreviewBytes);
+          const { bytesRead } = await handle.read(buffer, 0, maxPreviewBytes, 0);
           let content = buffer.toString('utf8', 0, bytesRead);
-          if (bytesRead === MAX_PREVIEW_BYTES) {
+          if (bytesRead === maxPreviewBytes) {
             content += '\n... (preview truncated) ...';
           }
           fileContentCache.set(targetFilePath, content);

@@ -238,6 +238,8 @@ export type TreeCheckboxConfig = {
   workspaceNames?: string[];  // List of workspace names for grouping (monorepo)
   // Semantic search callback (optional)
   onSemanticSearch?: (query: string) => Promise<Array<{ path: string; score: number }>>;
+  // Preview cache size in bytes (default: 20KB)
+  previewCacheSize?: number;
 };
 
 // ============================================================================
@@ -294,6 +296,7 @@ export type PackerOptions = {
 
   // Performance
   useRipgrep: 'auto' | 'force' | 'disabled';
+  concurrencyLimit?: number;  // Max concurrent file operations (default: 50)
 
   // Caching
   noCache: boolean;

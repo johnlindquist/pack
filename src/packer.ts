@@ -23,7 +23,7 @@ import { isRipgrepAvailable, discoverFilesWithRipgrep, ripgrepExcludeContent } f
 import { CacheManager, createCacheManager } from "./cache.js";
 import { redactSecrets, createRedactionReport, formatRedactionReport, type DetectedSecret, type RedactionReport } from "./secrets.js";
 
-const CONCURRENCY_LIMIT = 50;
+const DEFAULT_CONCURRENCY_LIMIT = 50;
 
 export type PackResult = {
   output: string;
@@ -38,6 +38,7 @@ export type PackResult = {
   chunks?: OutputChunk[];  // Populated when maxTokens is set
   skippedFiles?: SkippedFile[];  // Files skipped due to exceeding token limits
   redactionReport?: RedactionReport;  // Summary of redacted secrets
+  warnings?: string[];  // Non-fatal issues encountered during processing
 };
 
 /**
@@ -130,10 +131,17 @@ export class Packer {
   }
 
   /**
+   * Get the effective concurrency limit
+   */
+  private get concurrencyLimit(): number {
+    return this.options.concurrencyLimit ?? DEFAULT_CONCURRENCY_LIMIT;
+  }
+
+  /**
    * Verify that files exist and are readable (used when ripgrep already filtered)
    */
   private async verifyFilesExist(files: string[]): Promise<string[]> {
-    const limit = pLimit(CONCURRENCY_LIMIT);
+    const limit = pLimit(this.concurrencyLimit);
     const results = await Promise.all(
       files.map(file =>
         limit(async () => {
@@ -408,7 +416,7 @@ export class Packer {
       return existing;
     }
 
-    const limit = pLimit(CONCURRENCY_LIMIT);
+    const limit = pLimit(this.concurrencyLimit);
     const total = files.length;
     let processed = 0;
     let lastEmitted = 0;
@@ -485,7 +493,7 @@ export class Packer {
     }
 
     const relativePaths = files.map(p => path.relative(cwd, p));
-    const limit = pLimit(CONCURRENCY_LIMIT);
+    const limit = pLimit(this.concurrencyLimit);
 
     let totalMatchCount = 0;
     let totalWindowCount = 0;
@@ -695,7 +703,7 @@ export class Packer {
    */
   async analyzeForInteractive(files: string[]): Promise<Array<{ path: string; relPath: string; tokens: number; ext: string }>> {
     const cwd = process.cwd();
-    const limit = pLimit(CONCURRENCY_LIMIT);
+    const limit = pLimit(this.concurrencyLimit);
     const { cache } = this;
     const total = files.length;
     let processed = 0;

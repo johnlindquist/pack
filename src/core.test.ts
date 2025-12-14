@@ -3,18 +3,22 @@ import {
   parseCSV,
   toExtSet,
   escRegex,
-  findAllMatches,
-  extractContextWindows,
-  formatContextWindows,
   contentContainsStrings,
   normalizeStrings,
   getDefaultExtensions,
   extensionToGlobPattern,
+} from "./utils";
+import {
+  findAllMatches,
+  extractContextWindows,
+  formatContextWindows,
+} from "./context";
+import {
   hasGlobChars,
   findRelatedFiles,
   expandWithRelatedFiles,
-  isGitRepository,
-} from "./core";
+} from "./scanner";
+import { isGitRepository } from "./git";
 
 describe("parseCSV", () => {
   test("returns empty array for undefined input", () => {

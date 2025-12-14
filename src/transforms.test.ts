@@ -1,8 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import {
-  parseTransformRule,
-  applyTransforms,
-} from "./core";
+import { parseTransformRule } from "./config";
+import { applyTransforms } from "./processing";
 import type { TransformRule } from "./types";
 
 describe("parseTransformRule", () => {

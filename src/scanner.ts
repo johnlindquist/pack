@@ -11,7 +11,7 @@ import pLimit from "p-limit";
 import { isBinaryFile } from "./analysis.js";
 import { verbose } from "./logger.js";
 
-const CONCURRENCY_LIMIT = 50;
+const DEFAULT_CONCURRENCY_LIMIT = 50;
 
 /**
  * Default ignore patterns (common build artifacts, dependencies, etc.)
@@ -167,9 +167,10 @@ export async function filterByContent(
   files: string[],
   pattern: RegExp | null,
   excludePattern: RegExp | null,
-  maxFileSize: number = 10 * 1024 * 1024
+  maxFileSize: number = 10 * 1024 * 1024,
+  concurrencyLimit: number = DEFAULT_CONCURRENCY_LIMIT
 ): Promise<string[]> {
-  const limit = pLimit(CONCURRENCY_LIMIT);
+  const limit = pLimit(concurrencyLimit);
 
   const results = await Promise.all(
     files.map(file =>

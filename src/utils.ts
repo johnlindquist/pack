@@ -121,22 +121,55 @@ export function escRegex(lit: string): string {
 }
 
 /**
+ * Result from buildPattern including validation errors
+ */
+export type PatternResult = {
+  pattern: RegExp | null;
+  error?: string;
+};
+
+/**
+ * Build regex pattern from search strings with validation
+ * Returns both the pattern and any validation error
+ */
+export function buildPatternSafe(
+  strings: string[],
+  caseSensitive: boolean,
+  useRawRegex: boolean
+): PatternResult {
+  if (strings.length === 0) return { pattern: null };
+
+  const flags = caseSensitive ? "" : "i";
+
+  try {
+    if (useRawRegex) {
+      // Use strings as-is (raw regex) - validate each pattern first
+      for (const s of strings) {
+        new RegExp(s); // Throws if invalid
+      }
+      return { pattern: new RegExp(strings.join("|"), flags) };
+    } else {
+      // Escape for literal matching - always safe
+      return { pattern: new RegExp(strings.map(escRegex).join("|"), flags) };
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { pattern: null, error: `Invalid regex pattern: ${message}` };
+  }
+}
+
+/**
  * Build regex pattern from search strings
+ * @throws Error if regex pattern is invalid (when useRawRegex is true)
  */
 export function buildPattern(
   strings: string[],
   caseSensitive: boolean,
   useRawRegex: boolean
 ): RegExp | null {
-  if (strings.length === 0) return null;
-
-  const flags = caseSensitive ? "" : "i";
-
-  if (useRawRegex) {
-    // Use strings as-is (raw regex)
-    return new RegExp(strings.join("|"), flags);
-  } else {
-    // Escape for literal matching
-    return new RegExp(strings.map(escRegex).join("|"), flags);
+  const result = buildPatternSafe(strings, caseSensitive, useRawRegex);
+  if (result.error) {
+    throw new Error(result.error);
   }
+  return result.pattern;
 }
