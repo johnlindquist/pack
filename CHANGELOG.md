@@ -1,3 +1,10 @@
+## [4.15.1](https://github.com/johnlindquist/pack/compare/v4.15.0...v4.15.1) (2025-12-14)
+
+
+### Bug Fixes
+
+* exclude all dependencies from LLM bundle ([2b9ffd7](https://github.com/johnlindquist/pack/commit/2b9ffd78c01a8b4c00807b165097839f7b23ec83))
+
 # [4.15.0](https://github.com/johnlindquist/pack/compare/v4.14.0...v4.15.0) (2025-12-14)
 
 
