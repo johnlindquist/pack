@@ -48,3 +48,5 @@ repomix-output.*
 # Keep documentation
 !README.md
 !PUBLISHING.md
+llm-bundle.js
+.packx-cache/
