@@ -1,3 +1,22 @@
+# [4.15.0](https://github.com/johnlindquist/pack/compare/v4.14.0...v4.15.0) (2025-12-14)
+
+
+### Bug Fixes
+
+* add missing dependencies for semantic search and Ink TUI ([40c8f3a](https://github.com/johnlindquist/pack/commit/40c8f3a8d50c632c1e62c13e4990ca6347fb4434))
+* prevent workspace shorthand from being treated as glob pattern ([853ae1c](https://github.com/johnlindquist/pack/commit/853ae1c6e8a20ec8dbff45eec3b4a25a77a7bc63))
+
+
+### Features
+
+* add --skeleton mode for interface-only extraction ([6e9aa11](https://github.com/johnlindquist/pack/commit/6e9aa115266ea1b7ed2cbcbd84491673e42042a0))
+* add automatic secret redaction for security ([9a02913](https://github.com/johnlindquist/pack/commit/9a029133ab3c98197d64073d088bf17f690b80e3)), closes [hi#entropy](https://github.com/hi/issues/entropy)
+* add monorepo and workspace support ([5c196f2](https://github.com/johnlindquist/pack/commit/5c196f2216c43f1681896fc5333ce058cbe5af0c))
+* add prompt template system for reusable instructions ([abafeb1](https://github.com/johnlindquist/pack/commit/abafeb18697d03214cdbc9d08c03b545e6e38880)), closes [#if](https://github.com/johnlindquist/pack/issues/if)
+* add semantic search with local embeddings ([ebcebd0](https://github.com/johnlindquist/pack/commit/ebcebd0e2ad7d44a8b02cbf8a23d9ef7fc5ce60f))
+* add visual dependency graph in interactive mode ([372150d](https://github.com/johnlindquist/pack/commit/372150d02c9289301a3595b240f250e34581ba38))
+* migrate TUI to React Ink for better maintainability ([e469d06](https://github.com/johnlindquist/pack/commit/e469d060a038aec34714d77af67588e4b8b3ac01))
+
 # [4.14.0](https://github.com/johnlindquist/pack/compare/v4.13.0...v4.14.0) (2025-12-12)
 
 
