@@ -217,10 +217,12 @@ export function applyMatchers(
   includeMatchersRel: Minimatch[],
   includeMatchersAbs: Minimatch[],
   ignoreMatchers: Minimatch[],
-  explicitFiles?: Set<string>
+  explicitFiles?: Set<string>,
+  roots?: string[]
 ): string[] {
   const filtered: string[] = [];
   const explicitOnly = explicitFiles && explicitFiles.size > 0;
+  const resolvedRoots = (roots || []).map(r => path.resolve(r));
 
   for (const file of files) {
     const rel = path.relative(cwd, file).replace(/\\/g, '/');
@@ -233,7 +235,18 @@ export function applyMatchers(
     if (!explicitOnly) {
       const hasIncludeFilters = (includeMatchersAbs.length + includeMatchersRel.length) > 0;
       if (hasIncludeFilters) {
-        const matchRel = includeMatchersRel.length ? includeMatchersRel.some(mm => mm.match(rel)) : false;
+        let matchRel = includeMatchersRel.length ? includeMatchersRel.some(mm => mm.match(rel)) : false;
+        // When scanning external directories, cwd-relative paths contain ../
+        // which ** cannot traverse. Try matching relative to each scan root.
+        if (!matchRel && includeMatchersRel.length) {
+          for (const root of resolvedRoots) {
+            const relToRoot = path.relative(root, file).replace(/\\/g, '/');
+            if (!relToRoot.startsWith('..') && includeMatchersRel.some(mm => mm.match(relToRoot))) {
+              matchRel = true;
+              break;
+            }
+          }
+        }
         const matchAbs = includeMatchersAbs.length ? includeMatchersAbs.some(mm => mm.match(absPosix)) : false;
         if (!(matchRel || matchAbs)) continue;
       }
