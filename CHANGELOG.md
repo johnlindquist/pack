@@ -1,3 +1,15 @@
+# [4.17.0](https://github.com/johnlindquist/pack/compare/v4.16.0...v4.17.0) (2026-02-16)
+
+
+### Bug Fixes
+
+* include glob (-i) now works with external directories ([2ce0e34](https://github.com/johnlindquist/pack/commit/2ce0e3477ff238d9d225d820fa0e36558a72553a))
+
+
+### Features
+
+* improve error handling and make config values configurable ([901e9aa](https://github.com/johnlindquist/pack/commit/901e9aa7ff3e0054a5fd9951c7758a088add79a9))
+
 # [4.16.0](https://github.com/johnlindquist/pack/compare/v4.15.1...v4.16.0) (2025-12-14)
 
 
